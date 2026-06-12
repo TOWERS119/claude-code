@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ToneLab — Layered Tone &amp; Binaural Beat Generator</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#151b24; --panel2:#1d2530; --line:#2a3342;
+    --text:#dde4ee; --dim:#8c98aa; --accent:#4cc9f0; --warn:#ffd166; --off:#404a5c;
+  }
+  *{ box-sizing:border-box }
+  html,body{ margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap{ max-width:1080px; margin:0 auto; padding:22px 16px 48px }
+
+  header{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; margin-bottom:16px }
+  h1{ font-size:21px; margin:0; letter-spacing:.5px }
+  .sub{ margin:2px 0 0; color:var(--dim); font-size:13px }
+  .master{ display:flex; align-items:center; gap:16px; flex-wrap:wrap }
+  .mvol{ display:flex; align-items:center; gap:8px }
+  .mvol label{ color:var(--dim); font-size:13px }
+  .mvol input{ width:130px }
+
+  .play{ background:var(--accent); color:#03222f; border:none; border-radius:999px;
+    padding:10px 22px; font-size:15px; font-weight:650; cursor:pointer }
+  .play:hover{ filter:brightness(1.1) }
+  .play.on{ background:var(--warn); color:#2e2305 }
+
+  .scopewrap{ position:relative; height:140px; background:#0a0e15; border:1px solid var(--line);
+    border-radius:12px; overflow:hidden; margin-bottom:16px }
+  #scope{ position:absolute; inset:0; width:100%; height:100% }
+  .scopehint{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:var(--dim); font-size:13.5px; text-align:center; padding:0 16px; pointer-events:none }
+
+  .presets{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px }
+  .preset{ background:var(--panel); border:1px solid var(--line); color:var(--text);
+    border-radius:999px; padding:8px 16px; font-size:14px; cursor:pointer }
+  .preset:hover{ border-color:var(--accent) }
+  .preset.active{ background:rgba(76,201,240,.12); border-color:var(--accent); color:var(--accent) }
+
+  .desc{ background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:10px; padding:14px 18px; margin-bottom:18px }
+  .desc h2{ margin:0 0 6px; font-size:15.5px }
+  .desc p{ margin:0; color:var(--dim); font-size:13.5px }
+  .hp{ display:block; margin-top:10px; padding:9px 12px; border-radius:8px; font-size:13.5px;
+    color:var(--warn); background:rgba(255,209,102,.07); border:1px solid rgba(255,209,102,.35) }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(295px,1fr)); gap:14px }
+  .layer{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    transition:opacity .2s, border-color .2s }
+  .layer:not(.off){ border-color:#33536b }
+  .layer.off{ opacity:.55 }
+  .lhead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px }
+  .lhead h3{ margin:0; font-size:14px; letter-spacing:.4px }
+  .row{ display:flex; align-items:center; gap:10px; margin:8px 0 }
+  .row > label{ width:40px; flex:none; color:var(--dim); font-size:12.5px; text-transform:uppercase; letter-spacing:.5px }
+  .val{ min-width:46px; text-align:right; color:var(--dim); font-size:13px; font-variant-numeric:tabular-nums }
+
+  select{ flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:7px; padding:6px 8px; font-size:14px }
+  .freqbox{ display:flex; align-items:center; gap:6px; flex:1 }
+  input[type=number]{ width:110px; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:7px; padding:6px 8px; font-size:14px; font-variant-numeric:tabular-nums }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0 }
+  input[type=number]{ -moz-appearance:textfield }
+  .unit{ color:var(--dim); font-size:13px }
+  .subnote{ color:var(--warn); font-size:12px; margin:2px 0 4px }
+
+  input[type=range]{ -webkit-appearance:none; appearance:none; flex:1; width:100%; height:22px;
+    background:transparent; cursor:pointer; margin:0 }
+  input[type=range]::-webkit-slider-runnable-track{ height:4px; border-radius:2px; background:var(--line) }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px; margin-top:-5px;
+    border-radius:50%; background:var(--accent); border:none; box-shadow:0 0 7px rgba(76,201,240,.55) }
+  input[type=range]::-moz-range-track{ height:4px; border-radius:2px; background:var(--line) }
+  input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%; background:var(--accent); border:none }
+  .fslider{ margin:0 0 2px }
+
+  .switch{ position:relative; display:inline-block; width:42px; height:24px; flex:none }
+  .switch input{ position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer }
+  .switch .knob{ position:absolute; inset:0; border-radius:12px; background:var(--off); transition:background .15s; pointer-events:none }
+  .switch .knob::after{ content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%;
+    background:#cfd7e2; transition:transform .15s }
+  .switch input:checked + .knob{ background:var(--accent) }
+  .switch input:checked + .knob::after{ transform:translateX(18px) }
+
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px }
+  footer{ margin-top:26px; border-top:1px solid var(--line); padding-top:14px }
+  footer p{ color:var(--dim); font-size:12.5px; margin:0 }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>ToneLab</h1>
+      <p class="sub">layered tone &amp; binaural-beat generator — six oscillators, all in your browser</p>
+    </div>
+    <div class="master">
+      <button id="playBtn" class="play" type="button">▶ Play</button>
+      <div class="mvol">
+        <label for="master">Master</label>
+        <input id="master" type="range" min="0" max="100" step="1" value="60" aria-label="Master volume">
+        <span id="masterVal" class="val">60%</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="scopewrap">
+    <canvas id="scope"></canvas>
+    <div id="scopeHint" class="scopehint">Press <b>&nbsp;▶ Play&nbsp;</b> to start the audio engine — browsers require a click before any sound can play.</div>
+  </div>
+
+  <nav id="presetBar" class="presets" aria-label="Presets"></nav>
+
+  <section class="desc" aria-live="polite">
+    <h2 id="presetName">No preset selected</h2>
+    <p id="presetDesc">Pick a preset above, or flip any layer’s switch below to build your own sound. Each of the six layers is an independent oscillator with its own waveform, frequency (0.1–20,000 Hz), volume, and stereo position. Every control glides smoothly, so you can reshape the sound while it plays.</p>
+    <span id="hpNote" class="hp" hidden>🎧 <b>Headphones required.</b> A binaural beat only arises when each ear receives its own tone; over speakers the two tones simply mix in the air and the effect is largely lost.</span>
+  </section>
+
+  <main id="layers" class="grid"></main>
+
+  <footer>
+    <p>All sound is synthesized locally with the Web Audio API — no network requests, no account, nothing recorded. This is a listening and relaxation tool, <b>not a medical device</b>: none of these presets diagnose, treat, or cure any condition, and the preset notes above reflect the current state of the evidence. Keep the volume comfortable, especially with headphones, and stop listening if you feel discomfort.</p>
+  </footer>
+
+</div>
+
+<script>
+'use strict';
+
+/* ================= constants & state ================= */
+const NUM_LAYERS = 6;
+const FMIN = 0.1, FMAX = 20000, FSTEPS = 2000;
+const WAVES = ['sine', 'square', 'sawtooth', 'triangle'];
+const DEFAULT_FREQS = [220, 330, 440, 110, 55, 880];
+
+const state = {
+  master: 60,
+  playing: false,
+  layers: Array.from({length: NUM_LAYERS}, (_, i) => ({
+    on: false, wave: 'sine', freq: DEFAULT_FREQS[i], vol: 40, pan: 0
+  }))
+};
+
+/* ================= presets =================
+   Descriptions are deliberately factual and measured: they state what the
+   preset does acoustically, what the associated claim is, and how well that
+   claim is actually supported. */
+const PRESETS = [
+  {
+    name: 'Deep Rest',
+    headphones: true,
+    desc: 'Delta-band brain activity (0.5–4 Hz) is what an EEG records during deep, slow-wave sleep — the most physically restorative sleep stages. A pure tone that low is below the range of human hearing, so this preset renders a delta-rate rhythm as a binaural beat instead: a quiet 100 Hz sine in the left ear and 102.5 Hz in the right produce a perceived 2.5 Hz beat. Evidence that delta-rate beats improve sleep is limited and mixed; many people simply find steady low tones relaxing.',
+    layers: [
+      { on: true, wave: 'sine', freq: 100,   vol: 30, pan: -100 },
+      { on: true, wave: 'sine', freq: 102.5, vol: 30, pan:  100 }
+    ]
+  },
+  {
+    name: 'Focus',
+    headphones: true,
+    desc: 'Plays a 200 Hz sine tone in the left ear and 210 Hz in the right. With headphones, the brain perceives a faint third “beat” pulsing at the 10 Hz difference — an auditory illusion called a binaural beat, here at a rate matching the alpha EEG band (8–12 Hz) seen during relaxed, alert wakefulness. Research on binaural beats and attention is mixed: some small studies report modest benefits, others find none. A steady background tone can also help simply by masking distracting noise.',
+    layers: [
+      { on: true, wave: 'sine', freq: 200, vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 210, vol: 40, pan:  100 }
+    ]
+  },
+  {
+    name: '528 Hz Solfeggio',
+    headphones: false,
+    desc: 'A single 528 Hz sine tone, one of the “solfeggio frequencies” popularized in the 1990s (close to the musical note C5). Claims that 528 Hz “repairs DNA” or has unique healing power are not supported by scientific evidence — controlled studies show no special effect compared with other steady tones. It is included here simply as a clean, calm reference tone that many people find pleasant for meditation or unwinding.',
+    layers: [
+      { on: true, wave: 'sine', freq: 528, vol: 40, pan: 0 }
+    ]
+  },
+  {
+    name: 'Schumann Resonance',
+    headphones: false,
+    desc: 'The Schumann resonances are electromagnetic — not acoustic — resonances of the Earth–ionosphere cavity, with a fundamental near 7.83 Hz. This preset recreates the fundamental and three harmonics (14.3, 20.8, 27.3 Hz) as sound. Note that 7.83 and 14.3 Hz are below the ~20 Hz floor of human hearing, and the upper harmonics are at the limit of what most speakers and headphones can reproduce — hearing very little is normal and expected. No health effects of listening to these frequencies have been established. Use the layer switches to choose which harmonics play.',
+    layers: [
+      { on: true, wave: 'sine', freq: 7.83, vol: 55, pan: 0 },
+      { on: true, wave: 'sine', freq: 14.3, vol: 40, pan: 0 },
+      { on: true, wave: 'sine', freq: 20.8, vol: 35, pan: 0 },
+      { on: true, wave: 'sine', freq: 27.3, vol: 30, pan: 0 }
+    ]
+  }
+];
+
+/* ================= audio engine ================= */
+let actx = null, masterGain = null, limiter = null, analyser = null, scopeBuf = null;
+let suspendTimer = null;
+const nodes = [];   // per-layer { osc, gain, pan }
+
+function ensureAudio(){
+  if (actx) return actx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  actx = new AC();
+
+  masterGain = actx.createGain();
+  masterGain.gain.value = 0;                     // fades in on play — never clicks
+
+  // soft safety limiter: several loud layers summed can't clip the output
+  limiter = actx.createDynamicsCompressor();
+  limiter.threshold.value = -9; limiter.knee.value = 6; limiter.ratio.value = 12;
+  limiter.attack.value = 0.003; limiter.release.value = 0.25;
+
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 4096;                       // long window so very low tones are visible
+  scopeBuf = new Uint8Array(analyser.fftSize);
+
+  masterGain.connect(limiter);
+  limiter.connect(analyser);
+  analyser.connect(actx.destination);
+
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const st = state.layers[i];
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    osc.type = st.wave;
+    osc.frequency.value = st.freq;
+    gain.gain.value = layerGain(st);
+    osc.connect(gain);
+    if (pan){ pan.pan.value = st.pan / 100; gain.connect(pan); pan.connect(masterGain); }
+    else { gain.connect(masterGain); }
+    osc.start();                                 // oscillators run forever; gain gates them (click-free)
+    nodes[i] = { osc, gain, pan };
+  }
+  return actx;
+}
+
+const layerGain = st => st.on ? Math.pow(st.vol / 100, 2) : 0;   // squared = more natural loudness curve
+const masterVal = () => Math.pow(state.master / 100, 2);
+
+function glide(param, value, tc){
+  // setTargetAtTime gives an exponential approach — no steps, no zipper noise
+  param.setTargetAtTime(value, actx.currentTime, tc);
+}
+
+function pushFreq(i, tc){ if (nodes[i]) glide(nodes[i].osc.frequency, state.layers[i].freq, tc || 0.03); }
+function pushVol(i){ if (nodes[i]) glide(nodes[i].gain.gain, layerGain(state.layers[i]), 0.04); }
+function pushPan(i){ const n = nodes[i]; if (n && n.pan) glide(n.pan.pan, state.layers[i].pan / 100, 0.03); }
+function pushWave(i){
+  const n = nodes[i], st = state.layers[i];
+  if (!n || n.osc.type === st.wave) return;
+  // oscillator.type changes are instant and can click — dip this layer for ~60 ms around the switch
+  glide(n.gain.gain, 0, 0.012);
+  setTimeout(() => { n.osc.type = st.wave; glide(n.gain.gain, layerGain(st), 0.02); }, 60);
+}
+function syncAllAudio(){
+  if (!actx) return;
+  for (let i = 0; i < NUM_LAYERS; i++){ pushFreq(i, 0.05); pushVol(i); pushPan(i); pushWave(i); }
+}
+
+/* ============ play / pause (autoplay-policy safe) ============ */
+async function setPlaying(p){
+  state.playing = p;
+  ui.playBtn.textContent = p ? '⏸ Pause' : '▶ Play';
+  ui.playBtn.classList.toggle('on', p);
+  ui.scopeHint.style.display = p ? 'none' : '';
+  if (p){
+    ensureAudio();                               // created inside a user gesture → allowed
+    clearTimeout(suspendTimer);
+    if (actx.state !== 'running'){ try { await actx.resume(); } catch (e) {} }
+    syncAllAudio();
+    glide(masterGain.gain, masterVal(), 0.06);
+  } else if (actx){
+    glide(masterGain.gain, 0, 0.05);             // fade out first…
+    clearTimeout(suspendTimer);
+    suspendTimer = setTimeout(() => {            // …then suspend, so pausing never pops
+      if (!state.playing && actx.state === 'running') actx.suspend();
+    }, 450);
+  }
+}
+
+/* ================= frequency mapping ================= */
+const freqToSlider = f => Math.round(FSTEPS * Math.log(f / FMIN) / Math.log(FMAX / FMIN));
+const sliderToFreq = s => FMIN * Math.pow(FMAX / FMIN, s / FSTEPS);
+const clampFreq = f => Math.min(FMAX, Math.max(FMIN, f));
+const fmtFreq = f => f >= 1000 ? String(Math.round(f)) : String(parseFloat(f.toFixed(2)));
+const fmtPan = p => p === 0 ? 'C' : (p < 0 ? 'L' + (-p) : 'R' + p);
+
+/* ================= UI ================= */
+const ui = {
+  playBtn:    document.getElementById('playBtn'),
+  master:     document.getElementById('master'),
+  masterVal:  document.getElementById('masterVal'),
+  presetName: document.getElementById('presetName'),
+  presetDesc: document.getElementById('presetDesc'),
+  hpNote:     document.getElementById('hpNote'),
+  scopeHint:  document.getElementById('scopeHint'),
+};
+const layerEls = [];
+const presetBtns = [];
+
+function buildLayers(){
+  const grid = document.getElementById('layers');
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const st = state.layers[i];
+    const card = document.createElement('section');
+    card.className = 'layer off';
+    card.innerHTML = `
+      <div class="lhead">
+        <h3>Layer ${i + 1}</h3>
+        <label class="switch">
+          <input type="checkbox" aria-label="Layer ${i + 1} on/off">
+          <span class="knob"></span>
+        </label>
+      </div>
+      <div class="row">
+        <label>Wave</label>
+        <select aria-label="Layer ${i + 1} waveform">
+          ${WAVES.map(w => `<option value="${w}">${w}</option>`).join('')}
+        </select>
+      </div>
+      <div class="row">
+        <label>Freq</label>
+        <div class="freqbox">
+          <input class="num" type="number" min="${FMIN}" max="${FMAX}" step="any"
+                 aria-label="Layer ${i + 1} frequency in hertz">
+          <span class="unit">Hz</span>
+        </div>
+      </div>
+      <input class="fslider" type="range" min="0" max="${FSTEPS}" step="1"
+             aria-label="Layer ${i + 1} frequency slider">
+      <div class="subnote" hidden>below ≈20 Hz — under the audible range; most speakers can’t reproduce it</div>
+      <div class="row">
+        <label>Vol</label>
+        <input class="vslider" type="range" min="0" max="100" step="1" aria-label="Layer ${i + 1} volume">
+        <span class="val vval"></span>
+      </div>
+      <div class="row">
+        <label>Pan</label>
+        <input class="pslider" type="range" min="-100" max="100" step="1" aria-label="Layer ${i + 1} stereo pan">
+        <span class="val pval"></span>
+      </div>`;
+    grid.appendChild(card);
+
+    const els = {
+      card,
+      on:      card.querySelector('.switch input'),
+      wave:    card.querySelector('select'),
+      num:     card.querySelector('.num'),
+      fslider: card.querySelector('.fslider'),
+      subnote: card.querySelector('.subnote'),
+      vslider: card.querySelector('.vslider'),
+      vval:    card.querySelector('.vval'),
+      pslider: card.querySelector('.pslider'),
+      pval:    card.querySelector('.pval'),
+    };
+    layerEls[i] = els;
+
+    els.on.addEventListener('change', () => {
+      st.on = els.on.checked;
+      card.classList.toggle('off', !st.on);
+      pushVol(i);
+    });
+    els.wave.addEventListener('change', () => { st.wave = els.wave.value; pushWave(i); });
+    els.fslider.addEventListener('input', () => {
+      st.freq = clampFreq(parseFloat(sliderToFreq(+els.fslider.value).toFixed(2)));
+      els.num.value = fmtFreq(st.freq);
+      els.subnote.hidden = st.freq >= 20;
+      pushFreq(i);
+    });
+    els.num.addEventListener('change', () => {     // commit on Enter/blur so typing "5…28" never jumps to 5 Hz
+      const f = parseFloat(els.num.value);
+      if (isFinite(f)) st.freq = clampFreq(f);
+      els.num.value = fmtFreq(st.freq);
+      els.fslider.value = freqToSlider(st.freq);
+      els.subnote.hidden = st.freq >= 20;
+      pushFreq(i, 0.05);
+    });
+    els.vslider.addEventListener('input', () => {
+      st.vol = +els.vslider.value;
+      els.vval.textContent = st.vol + '%';
+      pushVol(i);
+    });
+    els.pslider.addEventListener('input', () => {
+      st.pan = +els.pslider.value;
+      els.pval.textContent = fmtPan(st.pan);
+      pushPan(i);
+    });
+
+    refreshLayerUI(i);
+  }
+}
+
+function refreshLayerUI(i){
+  const st = state.layers[i], els = layerEls[i];
+  els.on.checked = st.on;
+  els.card.classList.toggle('off', !st.on);
+  els.wave.value = st.wave;
+  els.num.value = fmtFreq(st.freq);
+  els.fslider.value = freqToSlider(st.freq);
+  els.subnote.hidden = st.freq >= 20;
+  els.vslider.value = st.vol;
+  els.vval.textContent = st.vol + '%';
+  els.pslider.value = st.pan;
+  els.pval.textContent = fmtPan(st.pan);
+}
+
+function buildPresets(){
+  const bar = document.getElementById('presetBar');
+  PRESETS.forEach((p, idx) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'preset';
+    b.textContent = p.name;
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => applyPreset(idx));
+    bar.appendChild(b);
+    presetBtns.push(b);
+  });
+}
+
+function applyPreset(idx){
+  const p = PRESETS[idx];
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const src = p.layers[i];
+    if (src) Object.assign(state.layers[i], src);
+    else state.layers[i].on = false;             // unused layers go silent but keep their settings
+    refreshLayerUI(i);
+  }
+  presetBtns.forEach((b, j) => {
+    b.classList.toggle('active', j === idx);
+    b.setAttribute('aria-pressed', String(j === idx));
+  });
+  ui.presetName.textContent = p.name;
+  ui.presetDesc.textContent = p.desc;
+  ui.hpNote.hidden = !p.headphones;              // persistent while the preset is selected
+  setPlaying(true);                              // preset click is a user gesture → audio may start
+}
+
+/* ================= master controls ================= */
+ui.playBtn.addEventListener('click', () => setPlaying(!state.playing));
+ui.master.addEventListener('input', () => {
+  state.master = +ui.master.value;
+  ui.masterVal.textContent = state.master + '%';
+  if (actx && state.playing) glide(masterGain.gain, masterVal(), 0.04);
+});
+
+/* belt & braces for autoplay policy: any interaction revives a suspended context */
+['pointerdown', 'keydown'].forEach(ev =>
+  document.addEventListener(ev, () => {
+    if (actx && state.playing && actx.state === 'suspended') actx.resume();
+  }, true)
+);
+
+/* ================= visualizer ================= */
+const scope = document.getElementById('scope');
+function drawScope(){
+  requestAnimationFrame(drawScope);
+  const dpr = window.devicePixelRatio || 1;
+  const w = scope.clientWidth, h = scope.clientHeight;
+  if (!w || !h) return;
+  if (scope.width !== Math.round(w * dpr) || scope.height !== Math.round(h * dpr)){
+    scope.width = Math.round(w * dpr);
+    scope.height = Math.round(h * dpr);
+  }
+  const g = scope.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  g.strokeStyle = 'rgba(255,255,255,0.07)';
+  g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+
+  g.lineWidth = 2;
+  g.strokeStyle = '#4cc9f0';
+  g.shadowColor = 'rgba(76,201,240,0.45)';
+  g.shadowBlur = 8;
+  g.beginPath();
+  if (analyser && state.playing){
+    analyser.getByteTimeDomainData(scopeBuf);
+    const n = scopeBuf.length;
+    for (let x = 0; x <= w; x++){
+      const v = scopeBuf[Math.min(n - 1, Math.floor(x / w * n))];
+      const y = h / 2 - ((v - 128) / 128) * (h / 2 - 6);
+      if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+  } else {
+    g.moveTo(0, h / 2); g.lineTo(w, h / 2);
+  }
+  g.stroke();
+  g.shadowBlur = 0;
+}
+
+/* ================= init ================= */
+buildLayers();
+buildPresets();
+drawScope();
+</script>
+</body>
+</html>
