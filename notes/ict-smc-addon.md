@@ -199,6 +199,14 @@ The course's checklist for a range/setup worth trading — needs all three:
 
 ## How this plugs into the agent (addon wiring)
 
+> **Now implemented:** the structural core of this addon is coded as a runnable,
+> dependency-free engine in `ict_smc_bot/` — numeric detectors, the entry gate
+> (sweep → MSS → PD array → risk geometry), a look-ahead-safe backtester, and
+> walk-forward out-of-sample validation. See `ict_smc_bot/strategy_spec.md` for
+> the numeric rule spec and `ict_smc_bot/README.md` to run it. The softer
+> confluences below (SMT, two-lines, sessions, EMA bias) are the documented next
+> steps, to be added and validated one at a time.
+
 Maps directly onto the layered architecture in `trading-knowledge-base.md` §4:
 
 - **Strategy file (encode as explicit rules):**
