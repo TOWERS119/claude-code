@@ -33,12 +33,33 @@ ict_smc_bot/
 │   ├── memory.py       # atomic file state + append-only trade log
 │   ├── config.py       # BotConfig, env overrides, get_secret (env-only)
 │   ├── engine.py       # run_once: the stateless agent invocation tying it together
+│   ├── performance.py  # equity curve, buy&hold benchmark, alpha, weekly review
+│   ├── notify.py       # alerting: console / file / webhook (Slack-style)
+│   ├── live.py         # VenueClient + safety-gated LiveBroker + run_live_once
+│   ├── routine.py      # run_routine: scheduled step + notify + weekly review
 │   └── data.py         # CSV loader + synthetic OHLC generator
 ├── run_backtest.py     # CLI: full / train-test / walk-forward research report
 ├── run_bot.py          # CLI: stateless paper-trading "run once" (resumable)
+├── fetch_coinbase.py   # pull real OHLCV (public API, no key) into a CSV
 ├── strategy_spec.md    # the numeric rule spec
-└── tests/              # test_ict_smc.py (strategy) + test_bot.py (risk/exec/engine)
+├── ROUTINE.md          # operating the bot as a scheduled agent (paper/live)
+└── tests/              # 46 tests: strategy + risk/exec/engine + infra
 ```
+
+## Running it as a scheduled agent
+
+See [`ROUTINE.md`](ROUTINE.md) for the full operating guide. In short: the
+infrastructure adds a **performance/benchmark** layer (alpha vs buy & hold, with
+an honest self-grade that refuses to grade tiny samples), an **alerting** layer
+(console / file / webhook), a **safety-gated live execution** path, and a
+**routine** wrapper for cron / Claude Code routines.
+
+Live trading is fail-closed: `LiveBroker` places no order unless constructed with
+`allow_live=True` **and** the environment sets `BOT_ALLOW_LIVE=1`, with a hard
+notional cap below the `RiskManager`. The venue client (`CoinbaseClient`) is a
+documented skeleton that refuses to run until you implement signing — so nothing
+here can place a real order by accident. The whole live path is testable on paper
+via `SimVenueClient`.
 
 ## The full bot (strategy + risk + execution + memory)
 

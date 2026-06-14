@@ -26,6 +26,15 @@ from .broker import PaperBroker, BracketOrder, Position, ClosedTrade, LiveBroker
 from .memory import Memory
 from .config import BotConfig, from_env, get_secret
 from .engine import run_once, build_broker, RunReport
+from .performance import PerformanceReport, summarize, weekly_review_text, buy_and_hold_return
+from .notify import (
+    NullNotifier, ConsoleNotifier, FileNotifier, WebhookNotifier, CompositeNotifier,
+)
+from .live import (
+    VenueClient, SimVenueClient, CoinbaseClient, LiveBroker, LiveOrderResult,
+    LiveRunReport, run_live_once,
+)
+from .routine import run_routine, RoutineResult
 
 __all__ = [
     "Candle",
@@ -60,4 +69,26 @@ __all__ = [
     "run_once",
     "build_broker",
     "RunReport",
+    # performance / benchmarking
+    "PerformanceReport",
+    "summarize",
+    "weekly_review_text",
+    "buy_and_hold_return",
+    # notifications
+    "NullNotifier",
+    "ConsoleNotifier",
+    "FileNotifier",
+    "WebhookNotifier",
+    "CompositeNotifier",
+    # live execution
+    "VenueClient",
+    "SimVenueClient",
+    "CoinbaseClient",
+    "LiveBroker",
+    "LiveOrderResult",
+    "LiveRunReport",
+    "run_live_once",
+    # routine
+    "run_routine",
+    "RoutineResult",
 ]
