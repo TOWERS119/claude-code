@@ -46,9 +46,13 @@ This is the genuine sandbox — a real broker endpoint, simulated money.
    export BOT_ALLOW_LIVE=1
    ```
 4. **Feed equity bars.** Alpaca bracket orders need an equity symbol with
-   whole-share quantities (e.g. `AAPL`). Provide a CSV of recent bars
-   (`timestamp,open,high,low,close,volume`); once you have keys you can pull them
-   from Alpaca's own data API, or use any provider.
+   whole-share quantities (e.g. `AAPL`). Pull recent bars with the included
+   fetcher (uses the same paper keys):
+   ```bash
+   python3 fetch_alpaca.py --symbol AAPL --timeframe 15Min --days 60 \
+       --out data/AAPL_15m.csv
+   ```
+   (Free accounts use the IEX feed by default; any other provider's CSV works too.)
 5. **Run one scheduled tick against the sandbox:**
    ```bash
    python3 run_live_dryrun.py --alpaca --symbol AAPL --csv data/AAPL_15m.csv

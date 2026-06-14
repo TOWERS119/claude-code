@@ -262,5 +262,43 @@ class TestRoutine(unittest.TestCase):
             self.assertTrue(any("review" in t for t in titles))
 
 
+class TestAlpacaDataFetch(unittest.TestCase):
+    def test_bars_to_rows_parses_and_orders(self):
+        import fetch_alpaca
+        payload = {
+            "bars": [
+                {"t": "2024-06-14T13:30:00Z", "o": 100, "h": 101, "l": 99, "c": 100.5, "v": 1000},
+                {"t": "2024-06-14T13:45:00Z", "o": 100.5, "h": 102, "l": 100, "c": 101.5, "v": 2000},
+            ],
+            "next_page_token": None,
+        }
+        rows = fetch_alpaca.bars_to_rows(payload)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][1], 100.0)        # open
+        self.assertLess(rows[0][0], rows[1][0])    # epoch increasing
+        self.assertEqual(rows[1][5], 2000.0)       # volume
+
+    def test_fetch_paginates_with_fake_http(self):
+        import fetch_alpaca
+        pages = [
+            (200, b'{"bars":[{"t":"2024-06-14T13:30:00Z","o":1,"h":2,"l":1,"c":1.5,"v":10}],'
+                  b'"next_page_token":"tok2"}'),
+            (200, b'{"bars":[{"t":"2024-06-14T13:45:00Z","o":2,"h":3,"l":2,"c":2.5,"v":20}],'
+                  b'"next_page_token":null}'),
+        ]
+        seq = iter(pages)
+        calls = []
+
+        def fake(method, url, headers, body=None):
+            calls.append(url)
+            return next(seq)
+
+        rows = fetch_alpaca.fetch("AAPL", "15Min", "2024-06-14T00:00:00Z", "iex",
+                                  http=fake, headers={"k": "v"})
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(calls), 2)               # followed the page token
+        self.assertIn("page_token=tok2", calls[1])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
