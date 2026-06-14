@@ -14,6 +14,12 @@ combine it with the agent-architecture material and a shared critical
 evaluation, since all three videos make unverifiable profit claims and end in
 audience funnels.
 
+> **Strategy addon:** `ict-smc-addon.md` extends the strategy layer (§1 / §4)
+> with the ICT / Smart Money Concepts vocabulary and rule scaffold (liquidity,
+> FVG, PD arrays, premium/discount, MMXM, SMT, daily-bias methods, the
+> "two lines" model). Same caveats apply — encode it numerically and validate
+> out-of-sample before any capital.
+
 ---
 
 ## 1. Manual Technical Analysis Methodology (Video 1)
