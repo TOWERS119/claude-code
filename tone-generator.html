@@ -171,6 +171,33 @@ const PRESETS = [
     ]
   },
   {
+    name: 'Delta',
+    headphones: true,
+    desc: 'Delta is the slowest EEG band (about 0.5–4 Hz) and dominates deep, dreamless slow-wave sleep — the stages most linked to physical recovery. A tone that low is inaudible, so this preset plays a 180 Hz sine in the left ear and 182.5 Hz in the right, which the brain hears as a 2.5 Hz binaural beat in the delta range (headphones required). Evidence that such beats actually shift brain activity or improve sleep is limited and mixed, so treat this as a calm listening aid, not a sleep treatment. (Same mechanism as the Deep Rest preset, on a slightly higher carrier tone.)',
+    layers: [
+      { on: true, wave: 'sine', freq: 180,   vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 182.5, vol: 40, pan:  100 }
+    ]
+  },
+  {
+    name: 'Theta',
+    headphones: true,
+    desc: 'Theta (about 4–8 Hz) appears as you drift into drowsiness and light sleep, and during some deep-relaxation and meditative states. This preset plays 180 Hz in the left ear and 186 Hz in the right, producing a 6 Hz binaural beat in the theta range (headphones required). Claims that theta beats reliably trigger meditation or boost memory go beyond the current, mixed evidence; many listeners simply find a slow, steady beat calming.',
+    layers: [
+      { on: true, wave: 'sine', freq: 180, vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 186, vol: 40, pan:  100 }
+    ]
+  },
+  {
+    name: 'Alpha',
+    headphones: true,
+    desc: 'Alpha (about 8–12 Hz) is prominent during relaxed, calm wakefulness, especially with the eyes closed. This preset plays 180 Hz in the left ear and 190 Hz in the right for a 10 Hz binaural beat in the alpha range (headphones required). Studies on alpha binaural beats and relaxation or attention are mixed, with small effects at best, so think of it as a pleasant background tone rather than a guaranteed change in mental state. (The Focus preset uses the same 10 Hz beat on a 200 Hz carrier.)',
+    layers: [
+      { on: true, wave: 'sine', freq: 180, vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 190, vol: 40, pan:  100 }
+    ]
+  },
+  {
     name: '528 Hz Solfeggio',
     headphones: false,
     desc: 'A single 528 Hz sine tone, one of the “solfeggio frequencies” popularized in the 1990s (close to the musical note C5). Claims that 528 Hz “repairs DNA” or has unique healing power are not supported by scientific evidence — controlled studies show no special effect compared with other steady tones. It is included here simply as a clean, calm reference tone that many people find pleasant for meditation or unwinding.',
