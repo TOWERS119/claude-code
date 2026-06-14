@@ -68,6 +68,8 @@
   input[type=number]{ -moz-appearance:textfield }
   .unit{ color:var(--dim); font-size:13px }
   .subnote{ color:var(--warn); font-size:12px; margin:2px 0 4px }
+  .amhint{ color:var(--dim); font-size:12px; margin:2px 0 4px }
+  input.amrate{ width:74px }
 
   input[type=range]{ -webkit-appearance:none; appearance:none; flex:1; width:100%; height:22px;
     background:transparent; cursor:pointer; margin:0 }
@@ -143,7 +145,7 @@ const state = {
   master: 60,
   playing: false,
   layers: Array.from({length: NUM_LAYERS}, (_, i) => ({
-    on: false, wave: 'sine', freq: DEFAULT_FREQS[i], vol: 40, pan: 0
+    on: false, wave: 'sine', freq: DEFAULT_FREQS[i], vol: 40, pan: 0, amOn: false, am: 6
   }))
 };
 
@@ -208,12 +210,12 @@ const PRESETS = [
   {
     name: 'Schumann Resonance',
     headphones: false,
-    desc: 'The Schumann resonances are electromagnetic — not acoustic — resonances of the Earth–ionosphere cavity, with a fundamental near 7.83 Hz. This preset recreates the fundamental and three harmonics (14.3, 20.8, 27.3 Hz) as sound. Note that 7.83 and 14.3 Hz are below the ~20 Hz floor of human hearing, and the upper harmonics are at the limit of what most speakers and headphones can reproduce — hearing very little is normal and expected. No health effects of listening to these frequencies have been established. Use the layer switches to choose which harmonics play.',
+    desc: 'The Schumann resonances are electromagnetic — not acoustic — resonances of the Earth–ionosphere cavity, with a fundamental near 7.83 Hz and harmonics around 14.3, 20.8 and 27.3 Hz. Those rates are at or below the ~20 Hz floor of human hearing, so a literal 7.83 Hz tone is silent on normal speakers. Instead, each layer here is an audible carrier tone whose volume pulses at one of the Schumann frequencies (amplitude modulation), so you actually hear the 7.83 Hz rhythm as a throb rather than as a pitch. This is a sonification — a way to make the rhythm audible — not the electromagnetic phenomenon itself, and no health effects of listening have been established. Use the layer switches to add or drop harmonics, and each layer’s Pulse control to change its rate.',
     layers: [
-      { on: true, wave: 'sine', freq: 7.83, vol: 55, pan: 0 },
-      { on: true, wave: 'sine', freq: 14.3, vol: 40, pan: 0 },
-      { on: true, wave: 'sine', freq: 20.8, vol: 35, pan: 0 },
-      { on: true, wave: 'sine', freq: 27.3, vol: 30, pan: 0 }
+      { on: true, wave: 'sine', freq: 110, vol: 45, pan: 0, amOn: true, am: 7.83 },
+      { on: true, wave: 'sine', freq: 165, vol: 32, pan: 0, amOn: true, am: 14.3 },
+      { on: true, wave: 'sine', freq: 220, vol: 26, pan: 0, amOn: true, am: 20.8 },
+      { on: true, wave: 'sine', freq: 330, vol: 22, pan: 0, amOn: true, am: 27.3 }
     ]
   }
 ];
@@ -221,7 +223,7 @@ const PRESETS = [
 /* ================= audio engine ================= */
 let actx = null, masterGain = null, limiter = null, analyser = null, scopeBuf = null;
 let suspendTimer = null;
-const nodes = [];   // per-layer { osc, gain, pan }
+const nodes = [];   // per-layer { osc, gain, pan, lfo, amGain }
 
 function ensureAudio(){
   if (actx) return actx;
@@ -249,20 +251,43 @@ function ensureAudio(){
     const osc = actx.createOscillator();
     const gain = actx.createGain();
     const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    // LFO → amGain → gain.gain implements amplitude modulation ("Pulse"):
+    // the LFO output is *added* onto the gain param, so the layer's volume
+    // throbs at am Hz — this is how an inaudible rate (e.g. 7.83 Hz) is made
+    // hearable as a pulse riding on an audible carrier tone.
+    const lfo = actx.createOscillator();
+    const amGain = actx.createGain();
     osc.type = st.wave;
     osc.frequency.value = st.freq;
-    gain.gain.value = layerGain(st);
+    lfo.type = 'sine';
+    lfo.frequency.value = st.am > 0 ? st.am : 1;
+    const parts = amParts(st);
+    gain.gain.value = parts.base;
+    amGain.gain.value = parts.depth;
     osc.connect(gain);
+    lfo.connect(amGain);
+    amGain.connect(gain.gain);
     if (pan){ pan.pan.value = st.pan / 100; gain.connect(pan); pan.connect(masterGain); }
     else { gain.connect(masterGain); }
     osc.start();                                 // oscillators run forever; gain gates them (click-free)
-    nodes[i] = { osc, gain, pan };
+    lfo.start();
+    nodes[i] = { osc, gain, pan, lfo, amGain };
   }
   return actx;
 }
 
+const AM_DEPTH = 0.85;                                           // pulse depth: 1 = full silence-to-peak, lower = gentler throb
 const layerGain = st => st.on ? Math.pow(st.vol / 100, 2) : 0;   // squared = more natural loudness curve
 const masterVal = () => Math.pow(state.master / 100, 2);
+
+// Split a layer's peak gain into a steady "base" plus a modulated "depth".
+// With Pulse on, the gain swings between (1-AM_DEPTH)·peak and peak at am Hz;
+// with it off, depth is 0 and the layer behaves exactly as a plain tone.
+function amParts(st){
+  const peak = layerGain(st);
+  if (st.amOn && st.on && st.am > 0) return { base: peak * (1 - AM_DEPTH / 2), depth: peak * (AM_DEPTH / 2) };
+  return { base: peak, depth: 0 };
+}
 
 function glide(param, value, tc){
   // setTargetAtTime gives an exponential approach — no steps, no zipper noise
@@ -270,18 +295,29 @@ function glide(param, value, tc){
 }
 
 function pushFreq(i, tc){ if (nodes[i]) glide(nodes[i].osc.frequency, state.layers[i].freq, tc || 0.03); }
-function pushVol(i){ if (nodes[i]) glide(nodes[i].gain.gain, layerGain(state.layers[i]), 0.04); }
+function pushVol(i){
+  const n = nodes[i]; if (!n) return;
+  const p = amParts(state.layers[i]);
+  glide(n.gain.gain, p.base, 0.04);
+  glide(n.amGain.gain, p.depth, 0.04);           // 0 when Pulse is off → no modulation
+}
 function pushPan(i){ const n = nodes[i]; if (n && n.pan) glide(n.pan.pan, state.layers[i].pan / 100, 0.03); }
+function pushAM(i){
+  const n = nodes[i], st = state.layers[i]; if (!n) return;
+  if (st.am > 0) glide(n.lfo.frequency, st.am, 0.03);
+  pushVol(i);                                    // re-split base/depth for the new Pulse state
+}
 function pushWave(i){
   const n = nodes[i], st = state.layers[i];
   if (!n || n.osc.type === st.wave) return;
   // oscillator.type changes are instant and can click — dip this layer for ~60 ms around the switch
   glide(n.gain.gain, 0, 0.012);
-  setTimeout(() => { n.osc.type = st.wave; glide(n.gain.gain, layerGain(st), 0.02); }, 60);
+  glide(n.amGain.gain, 0, 0.012);
+  setTimeout(() => { n.osc.type = st.wave; pushVol(i); }, 60);
 }
 function syncAllAudio(){
   if (!actx) return;
-  for (let i = 0; i < NUM_LAYERS; i++){ pushFreq(i, 0.05); pushVol(i); pushPan(i); pushWave(i); }
+  for (let i = 0; i < NUM_LAYERS; i++){ pushFreq(i, 0.05); pushPan(i); pushWave(i); pushAM(i); }
 }
 
 /* ============ play / pause (autoplay-policy safe) ============ */
@@ -309,6 +345,7 @@ async function setPlaying(p){
 const freqToSlider = f => Math.round(FSTEPS * Math.log(f / FMIN) / Math.log(FMAX / FMIN));
 const sliderToFreq = s => FMIN * Math.pow(FMAX / FMIN, s / FSTEPS);
 const clampFreq = f => Math.min(FMAX, Math.max(FMIN, f));
+const clampAM = v => Math.min(100, Math.max(0.1, v));
 const fmtFreq = f => f >= 1000 ? String(Math.round(f)) : String(parseFloat(f.toFixed(2)));
 const fmtPan = p => p === 0 ? 'C' : (p < 0 ? 'L' + (-p) : 'R' + p);
 
@@ -365,7 +402,17 @@ function buildLayers(){
         <label>Pan</label>
         <input class="pslider" type="range" min="-100" max="100" step="1" aria-label="Layer ${i + 1} stereo pan">
         <span class="val pval"></span>
-      </div>`;
+      </div>
+      <div class="row">
+        <label title="Throbs this layer's volume at the chosen rate, so a very low, otherwise-inaudible rhythm can be heard riding on an audible tone">Pulse</label>
+        <label class="switch">
+          <input type="checkbox" class="amtog" aria-label="Layer ${i + 1} volume pulse on/off">
+          <span class="knob"></span>
+        </label>
+        <input class="num amrate" type="number" min="0.1" max="100" step="any" aria-label="Layer ${i + 1} pulse rate in hertz">
+        <span class="unit">Hz</span>
+      </div>
+      <div class="amhint" hidden>volume throbs at this rate — makes a sub-audible rhythm audible on the carrier tone</div>`;
     grid.appendChild(card);
 
     const els = {
@@ -379,6 +426,9 @@ function buildLayers(){
       vval:    card.querySelector('.vval'),
       pslider: card.querySelector('.pslider'),
       pval:    card.querySelector('.pval'),
+      amtog:   card.querySelector('.amtog'),
+      amrate:  card.querySelector('.amrate'),
+      amhint:  card.querySelector('.amhint'),
     };
     layerEls[i] = els;
 
@@ -412,6 +462,17 @@ function buildLayers(){
       els.pval.textContent = fmtPan(st.pan);
       pushPan(i);
     });
+    els.amtog.addEventListener('change', () => {
+      st.amOn = els.amtog.checked;
+      els.amhint.hidden = !st.amOn;
+      pushAM(i);
+    });
+    els.amrate.addEventListener('change', () => {
+      const v = parseFloat(els.amrate.value);
+      if (isFinite(v)) st.am = clampAM(v);
+      els.amrate.value = fmtFreq(st.am);
+      if (st.amOn) pushAM(i);
+    });
 
     refreshLayerUI(i);
   }
@@ -429,6 +490,9 @@ function refreshLayerUI(i){
   els.vval.textContent = st.vol + '%';
   els.pslider.value = st.pan;
   els.pval.textContent = fmtPan(st.pan);
+  els.amtog.checked = st.amOn;
+  els.amrate.value = fmtFreq(st.am);
+  els.amhint.hidden = !st.amOn;
 }
 
 function buildPresets(){
@@ -449,8 +513,13 @@ function applyPreset(idx){
   const p = PRESETS[idx];
   for (let i = 0; i < NUM_LAYERS; i++){
     const src = p.layers[i];
-    if (src) Object.assign(state.layers[i], src);
-    else state.layers[i].on = false;             // unused layers go silent but keep their settings
+    if (src){
+      Object.assign(state.layers[i], src);
+      state.layers[i].amOn = src.amOn || false;   // presets that don't ask for Pulse leave it off
+    } else {
+      state.layers[i].on = false;                 // unused layers go silent but keep their settings
+      state.layers[i].amOn = false;
+    }
     refreshLayerUI(i);
   }
   presetBtns.forEach((b, j) => {
