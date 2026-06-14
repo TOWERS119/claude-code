@@ -17,8 +17,11 @@ from ict_smc.notify import (
 from ict_smc.config import BotConfig
 from ict_smc.risk import RiskManager
 from ict_smc.memory import Memory
-from ict_smc.live import SimVenueClient, CoinbaseClient, LiveBroker, run_live_once
+from ict_smc.live import (
+    SimVenueClient, CoinbaseClient, AlpacaClient, LiveBroker, run_live_once,
+)
 from ict_smc.routine import run_routine
+import json
 
 
 def C(ts, o, h, l, c, v=0.0):
@@ -138,6 +141,80 @@ class TestLiveSafety(unittest.TestCase):
         c = CoinbaseClient()
         with self.assertRaises(NotImplementedError):
             c.place_bracket(symbol="BTC", side="long", qty=1, entry=1, stop=1, target=1)
+
+
+class TestAlpacaClient(unittest.TestCase):
+    """Exercises the Alpaca paper client with a fake HTTP transport: no network,
+    no keys. Verifies request construction, auth headers, and parsing."""
+
+    def _client_with(self, responses):
+        calls = []
+
+        def fake_http(method, url, headers, body=None):
+            calls.append({"method": method, "url": url, "headers": headers,
+                          "body": json.loads(body) if body else None})
+            status, payload = responses.get((method, url.split("alpaca.markets")[-1]),
+                                            (200, b"{}"))
+            return status, payload
+
+        client = AlpacaClient(http=fake_http, key="k", secret="s")
+        return client, calls
+
+    def test_defaults_to_paper_sandbox(self):
+        c = AlpacaClient(key="k", secret="s")
+        self.assertIn("paper-api.alpaca.markets", c.base_url)
+
+    def test_get_equity_parses(self):
+        c, calls = self._client_with({
+            ("GET", "/v2/account"): (200, b'{"equity": "10500.25"}'),
+        })
+        self.assertAlmostEqual(c.get_account_equity(), 10500.25, places=2)
+        self.assertEqual(calls[0]["headers"]["APCA-API-KEY-ID"], "k")
+        self.assertEqual(calls[0]["headers"]["APCA-API-SECRET-KEY"], "s")
+
+    def test_place_bracket_builds_correct_payload(self):
+        c, calls = self._client_with({
+            ("POST", "/v2/orders"): (200, b'{"id": "abc-123"}'),
+        })
+        resp = c.place_bracket(symbol="AAPL", side="long", qty=3,
+                               entry=100.0, stop=95.0, target=110.0)
+        self.assertEqual(resp["id"], "abc-123")
+        body = calls[0]["body"]
+        self.assertEqual(body["order_class"], "bracket")
+        self.assertEqual(body["side"], "buy")
+        self.assertEqual(body["type"], "limit")
+        self.assertEqual(body["limit_price"], 100.0)
+        self.assertEqual(body["take_profit"]["limit_price"], 110.0)
+        self.assertEqual(body["stop_loss"]["stop_price"], 95.0)
+
+    def test_short_maps_to_sell(self):
+        c, calls = self._client_with({("POST", "/v2/orders"): (200, b'{"id":"x"}')})
+        c.place_bracket(symbol="AAPL", side="short", qty=1, entry=100, stop=105, target=90)
+        self.assertEqual(calls[0]["body"]["side"], "sell")
+
+    def test_http_error_raises(self):
+        c, _ = self._client_with({("GET", "/v2/account"): (403, b'{"message":"forbidden"}')})
+        with self.assertRaises(RuntimeError):
+            c.get_account_equity()
+
+    def test_alpaca_through_livebroker_gates(self):
+        # AlpacaClient behind LiveBroker still obeys the fail-closed gates.
+        c, calls = self._client_with({("POST", "/v2/orders"): (200, b'{"id":"ord1"}')})
+        b = LiveBroker(c, symbol="AAPL", allow_live=True)
+        # without the env switch -> rejected, no HTTP call made
+        os.environ.pop("BOT_ALLOW_LIVE", None)
+        res = b.submit_bracket(symbol="AAPL", side="long", qty=1, entry=100, stop=95, target=110)
+        self.assertFalse(res.ok)
+        self.assertEqual(len(calls), 0)
+        # with the env switch -> order placed
+        os.environ["BOT_ALLOW_LIVE"] = "1"
+        try:
+            res = b.submit_bracket(symbol="AAPL", side="long", qty=1, entry=100, stop=95, target=110)
+        finally:
+            os.environ.pop("BOT_ALLOW_LIVE", None)
+        self.assertTrue(res.ok)
+        self.assertEqual(res.id, "ord1")
+        self.assertEqual(len(calls), 1)
 
 
 class TestLiveOrchestrator(unittest.TestCase):

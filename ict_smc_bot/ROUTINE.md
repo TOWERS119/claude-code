@@ -67,25 +67,57 @@ BOT_NOTIFY_FILE=alerts.log       # optional file sink
 Secrets (read from the environment only, never the repo):
 
 ```
-COINBASE_API_KEY=...
-COINBASE_API_SECRET=...
+ALPACA_API_KEY_ID=...        # from the Alpaca paper dashboard
+ALPACA_API_SECRET_KEY=...
 ```
 
-## Going live (deliberately gated)
+## Sandbox / live via Alpaca (implemented)
 
-Live trading is **fail-closed** and requires implementing a venue client first.
+`AlpacaClient` is implemented and defaults to the **paper sandbox**
+(`https://paper-api.alpaca.markets`). It uses simple header auth (no request
+signing) and an injectable HTTP layer, so it's fully unit-tested without keys.
 
-1. Implement `CoinbaseClient` (or another `VenueClient`) in `ict_smc/live.py` —
-   signing, `get_account_equity`, `get_open_positions`, `place_bracket`,
-   `cancel_all`. Test against the venue's **sandbox** first.
-2. Construct `LiveBroker(client, symbol=..., allow_live=True, max_order_notional=...)`
-   and drive it with `run_live_once` instead of `run_once`.
-3. Arm it: set `BOT_ALLOW_LIVE=1`. **Both** `allow_live=True` *and* the env var
-   are required — two independent switches, both fail-closed.
-4. Hard limits live in three places: the `RiskManager` (pre-trade), the
+```python
+import os
+from ict_smc.live import AlpacaClient, LiveBroker, run_live_once
+from ict_smc.config import BotConfig
+from ict_smc.risk import RiskManager
+from ict_smc.memory import Memory
+from ict_smc import data
+
+# 1) keys in the environment only (paper account)
+#    export ALPACA_API_KEY_ID=...  ALPACA_API_SECRET_KEY=...
+client = AlpacaClient()                      # paper sandbox by default
+broker = LiveBroker(client, symbol="AAPL",   # bracket orders need an equity symbol
+                    allow_live=True, max_order_notional=2_000.0)
+
+cfg = BotConfig(symbol="AAPL", state_dir="./.bot_state")
+risk = RiskManager(cfg.limits)
+mem = Memory(cfg.state_dir)
+candles = data.from_csv("data/AAPL_15m.csv")  # your latest feed
+
+# 2) arm the env switch (the SECOND of the two required switches)
+os.environ["BOT_ALLOW_LIVE"] = "1"
+report = run_live_once(cfg, broker, risk, mem, candles)
+print(report.summary())
+```
+
+Two notes specific to Alpaca: bracket orders are an **equities** feature and need
+**whole-share** quantities (use an equity symbol like `AAPL` to demo); set the
+base URL to `AlpacaClient.LIVE_URL` only when you genuinely mean real money.
+
+## Going truly live (deliberately gated)
+
+1. Start on the **paper sandbox** above for a meaningful period.
+2. Both `allow_live=True` *and* `BOT_ALLOW_LIVE=1` are required — two independent
+   fail-closed switches.
+3. Hard limits live in three places: the `RiskManager` (pre-trade), the
    `LiveBroker` notional cap (defence in depth), and — most importantly —
-   **broker-side limits on the exchange account itself** (max order size, no
-   withdrawal permission on the API key). Do not rely on code alone.
+   **broker-side limits on the account itself** (max order size, no withdrawal
+   permission on the API key). Do not rely on code alone.
+4. For other venues, implement the `VenueClient` protocol (`CoinbaseClient` is a
+   skeleton — note Coinbase Advanced needs ES256/JWT signing, a crypto
+   dependency, and has no usable trading sandbox).
 
 ## Guardrails checklist (do not skip)
 

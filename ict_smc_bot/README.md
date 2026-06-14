@@ -56,10 +56,12 @@ an honest self-grade that refuses to grade tiny samples), an **alerting** layer
 
 Live trading is fail-closed: `LiveBroker` places no order unless constructed with
 `allow_live=True` **and** the environment sets `BOT_ALLOW_LIVE=1`, with a hard
-notional cap below the `RiskManager`. The venue client (`CoinbaseClient`) is a
-documented skeleton that refuses to run until you implement signing — so nothing
-here can place a real order by accident. The whole live path is testable on paper
-via `SimVenueClient`.
+notional cap below the `RiskManager`. `AlpacaClient` is implemented and defaults
+to the **paper sandbox** (`paper-api.alpaca.markets`) — header auth, injectable
+HTTP, fully unit-tested without keys; see [`ROUTINE.md`](ROUTINE.md) for the
+go-live snippet. The whole live path is also testable offline via `SimVenueClient`,
+and `CoinbaseClient` remains a documented skeleton (Coinbase Advanced needs
+ES256/JWT signing + has no usable sandbox).
 
 ## The full bot (strategy + risk + execution + memory)
 

@@ -31,8 +31,8 @@ from .notify import (
     NullNotifier, ConsoleNotifier, FileNotifier, WebhookNotifier, CompositeNotifier,
 )
 from .live import (
-    VenueClient, SimVenueClient, CoinbaseClient, LiveBroker, LiveOrderResult,
-    LiveRunReport, run_live_once,
+    VenueClient, SimVenueClient, CoinbaseClient, AlpacaClient, LiveBroker,
+    LiveOrderResult, LiveRunReport, run_live_once, urllib_http,
 )
 from .routine import run_routine, RoutineResult
 
@@ -84,6 +84,8 @@ __all__ = [
     "VenueClient",
     "SimVenueClient",
     "CoinbaseClient",
+    "AlpacaClient",
+    "urllib_http",
     "LiveBroker",
     "LiveOrderResult",
     "LiveRunReport",

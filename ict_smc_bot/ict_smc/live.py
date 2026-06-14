@@ -24,15 +24,32 @@ accident. ``SimVenueClient`` lets you exercise the entire live path on paper.
 
 from __future__ import annotations
 
+import json
 import os
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field, asdict
-from typing import Callable, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 from .types import Candle, Params
-from .config import BotConfig
+from .config import BotConfig, get_secret
 from .risk import RiskManager
 from .memory import Memory
 from .strategy import generate_setups
+
+
+# A method-aware HTTP transport: (method, url, headers, body) -> (status, bytes).
+# Injectable so REST clients can be unit-tested with no network or keys.
+HttpFn = Callable[[str, str, dict, Optional[bytes]], Tuple[int, bytes]]
+
+
+def urllib_http(method: str, url: str, headers: dict, body: Optional[bytes] = None) -> Tuple[int, bytes]:
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:  # surface the body so callers can see why
+        return e.code, e.read()
 
 
 # --------------------------------------------------------------------------- #
@@ -105,6 +122,83 @@ class CoinbaseClient:
 
     def cancel_all(self, symbol: str) -> None:
         self._not_ready("cancel_all")
+
+
+class AlpacaClient:
+    """Alpaca venue client, defaulting to the **paper sandbox**.
+
+    Auth is two headers (no request signing), so this stays pure-stdlib and the
+    HTTP layer is injectable for testing. Credentials are read lazily from the
+    environment (``ALPACA_API_KEY_ID`` / ``ALPACA_API_SECRET_KEY``) so the client
+    can be constructed and unit-tested without keys.
+
+    Notes:
+    * Default base URL is ``https://paper-api.alpaca.markets`` (the sandbox).
+      Switch to ``https://api.alpaca.markets`` only for real money.
+    * Bracket orders on Alpaca are an equities feature and require **whole-share**
+      quantities; demo the live path with an equity symbol (e.g. ``AAPL``). Crypto
+      has limited order types.
+    """
+
+    PAPER_URL = "https://paper-api.alpaca.markets"
+    LIVE_URL = "https://api.alpaca.markets"
+
+    def __init__(
+        self,
+        *,
+        base_url: str = PAPER_URL,
+        http: Optional[HttpFn] = None,
+        key: Optional[str] = None,
+        secret: Optional[str] = None,
+        key_name: str = "ALPACA_API_KEY_ID",
+        secret_name: str = "ALPACA_API_SECRET_KEY",
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.http = http or urllib_http
+        self._key = key
+        self._secret = secret
+        self.key_name = key_name
+        self.secret_name = secret_name
+
+    def _headers(self) -> dict:
+        key = self._key or get_secret(self.key_name)
+        secret = self._secret or get_secret(self.secret_name)
+        return {
+            "APCA-API-KEY-ID": key,
+            "APCA-API-SECRET-KEY": secret,
+            "Content-Type": "application/json",
+        }
+
+    def _request(self, method: str, path: str, body: Optional[bytes] = None) -> object:
+        status, raw = self.http(method, self.base_url + path, self._headers(), body)
+        if not 200 <= status < 300:
+            raise RuntimeError(f"Alpaca {method} {path} -> {status}: {raw[:300]!r}")
+        return json.loads(raw) if raw else {}
+
+    def get_account_equity(self) -> float:
+        acct = self._request("GET", "/v2/account")
+        return float(acct.get("equity") or acct.get("portfolio_value") or 0.0)
+
+    def get_open_positions(self) -> List[dict]:
+        return self._request("GET", "/v2/positions") or []
+
+    def place_bracket(self, *, symbol: str, side: str, qty: float,
+                      entry: float, stop: float, target: float) -> dict:
+        payload = {
+            "symbol": symbol,
+            "qty": str(qty),
+            "side": "buy" if side == "long" else "sell",
+            "type": "limit",
+            "limit_price": round(entry, 2),
+            "time_in_force": "gtc",
+            "order_class": "bracket",
+            "take_profit": {"limit_price": round(target, 2)},
+            "stop_loss": {"stop_price": round(stop, 2)},
+        }
+        return self._request("POST", "/v2/orders", json.dumps(payload).encode())
+
+    def cancel_all(self, symbol: Optional[str] = None) -> None:
+        self._request("DELETE", "/v2/orders")
 
 
 # --------------------------------------------------------------------------- #
