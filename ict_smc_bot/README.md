@@ -28,11 +28,50 @@ ict_smc_bot/
 │   ├── detectors.py    # ATR, swings, displacement, FVGs, order blocks
 │   ├── strategy.py     # the entry gate (sweep → MSS → PD array → risk geometry)
 │   ├── backtest.py     # simulator, metrics, train_test, walk_forward
+│   ├── risk.py         # RiskManager: sizing, circuit breaker, kill-switch, whitelist
+│   ├── broker.py       # PaperBroker (bar-by-bar bracket orders) + LiveBroker stub
+│   ├── memory.py       # atomic file state + append-only trade log
+│   ├── config.py       # BotConfig, env overrides, get_secret (env-only)
+│   ├── engine.py       # run_once: the stateless agent invocation tying it together
 │   └── data.py         # CSV loader + synthetic OHLC generator
-├── run_backtest.py     # CLI report (full / train-test / walk-forward)
+├── run_backtest.py     # CLI: full / train-test / walk-forward research report
+├── run_bot.py          # CLI: stateless paper-trading "run once" (resumable)
 ├── strategy_spec.md    # the numeric rule spec
-└── tests/test_ict_smc.py
+└── tests/              # test_ict_smc.py (strategy) + test_bot.py (risk/exec/engine)
 ```
+
+## The full bot (strategy + risk + execution + memory)
+
+Beyond backtesting, the package runs as an autonomous **paper-trading agent**
+built the way the knowledge base prescribes — stateless runs over file-based
+memory, with risk enforced as a hard chokepoint:
+
+```bash
+# One stateless run; advance only 1500 new bars, persisting to ./.bot_state
+python3 run_bot.py --synthetic --bars 4000 --max-bars 1500 --state-dir ./.bot_state
+# Run it again: it resumes from the saved cursor (true stateless-run model)
+python3 run_bot.py --synthetic --bars 4000 --state-dir ./.bot_state
+```
+
+The layers:
+
+- **`engine.run_once`** — the single agent invocation: restore state → advance
+  over new bars → resolve fills/exits → log trades → enforce halts → risk-gate
+  and submit fresh setups → persist. Schedule it (cron / Claude Code routine) and
+  it behaves like a live agent.
+- **`RiskManager`** — every setup is a *request*; this is the only path to an
+  order. Enforces (in order) kill-switch (max drawdown), daily loss breaker,
+  whitelist, max concurrent positions, max trades/day, min reward:risk,
+  fractional sizing, and a hard notional cap (sizing only ever shrinks).
+- **`PaperBroker`** — deterministic bar-by-bar bracket-order engine with the same
+  conservative fill/cost rules as the backtester; fully serializable so state
+  survives between stateless runs. `LiveBroker` is a deliberate non-functional
+  stub so nothing here can place a real order by accident.
+- **`Memory`** — atomic `state.json` (cursor, equity peak, daily counters, broker
+  state) + append-only `trades.jsonl` audit log.
+- **`config.get_secret`** — API keys come from environment variables only, never
+  the repo or a `.env`. Going live means implementing `LiveBroker` against your
+  venue's SDK behind an explicit opt-in.
 
 ## Quick start
 
