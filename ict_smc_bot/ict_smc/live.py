@@ -26,8 +26,6 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field, asdict
 from typing import Callable, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
@@ -36,20 +34,8 @@ from .config import BotConfig, get_secret
 from .risk import RiskManager
 from .memory import Memory
 from .strategy import generate_setups
-
-
-# A method-aware HTTP transport: (method, url, headers, body) -> (status, bytes).
-# Injectable so REST clients can be unit-tested with no network or keys.
-HttpFn = Callable[[str, str, dict, Optional[bytes]], Tuple[int, bytes]]
-
-
-def urllib_http(method: str, url: str, headers: dict, body: Optional[bytes] = None) -> Tuple[int, bytes]:
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return r.status, r.read()
-    except urllib.error.HTTPError as e:  # surface the body so callers can see why
-        return e.code, e.read()
+from .advisor import TradeAdvisor, AdvisorAction
+from .http import HttpFn, urllib_http  # re-exported for backward compatibility
 
 
 # --------------------------------------------------------------------------- #
@@ -283,6 +269,7 @@ def run_live_once(
     memory: Memory,
     candles: List[Candle],
     params: Optional[Params] = None,
+    advisor: Optional[TradeAdvisor] = None,
     notifier=None,
 ) -> LiveRunReport:
     """One live invocation: reconcile with the venue, evaluate setups armed on the
@@ -310,6 +297,16 @@ def run_live_once(
 
     report = LiveRunReport(acted_on_bar=last, equity=equity)
     for s in fresh:
+        verdict = None
+        if advisor is not None:
+            verdict = advisor.review(
+                setup=s, symbol=config.symbol, equity=equity,
+                recent_candles=candles[max(0, last - 50):last + 1],
+                open_positions=len(positions), daily_pnl=daily["pnl"],
+            )
+            if verdict.action == AdvisorAction.VETO:
+                report.rejections.append(f"{s.direction}: advisor veto ({verdict.reason})")
+                continue
         decision = risk.evaluate(
             symbol=config.symbol, side=s.direction, entry=s.entry, stop=s.stop,
             target=s.target, equity=equity, peak_equity=peak, open_positions=positions,
@@ -319,15 +316,19 @@ def run_live_once(
         if not decision.approved:
             report.rejections.append(f"{s.direction}: {decision.reason}")
             continue
+        qty = decision.qty if verdict is None else TradeAdvisor.apply(decision.qty, verdict)
+        if qty <= 0:
+            report.rejections.append(f"{s.direction}: advisor downsized to zero")
+            continue
         res = broker.submit_bracket(
-            symbol=config.symbol, side=s.direction, qty=decision.qty,
+            symbol=config.symbol, side=s.direction, qty=qty,
             entry=s.entry, stop=s.stop, target=s.target)
         if res.ok:
             report.submitted.append(res.id)
             daily["trades"] += 1
             if notifier:
                 notifier.send("order submitted",
-                              f"{s.direction} {config.symbol} qty={decision.qty:.4f} "
+                              f"{s.direction} {config.symbol} qty={qty:.4f} "
                               f"entry={s.entry:.2f} stop={s.stop:.2f} tgt={s.target:.2f}")
         else:
             report.rejections.append(f"{s.direction}: broker rejected ({res.error})")

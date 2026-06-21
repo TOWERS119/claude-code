@@ -27,6 +27,7 @@ from .risk import RiskManager
 from .broker import PaperBroker
 from .memory import Memory
 from .strategy import generate_setups
+from .advisor import TradeAdvisor, AdvisorAction
 
 
 @dataclass
@@ -74,6 +75,7 @@ def run_once(
     candles: List[Candle],
     params: Optional[Params] = None,
     max_bars: Optional[int] = None,
+    advisor: Optional[TradeAdvisor] = None,
     logger=None,
 ) -> RunReport:
     params = params or config.params
@@ -136,8 +138,19 @@ def run_once(
             report.halted_reasons.append("daily loss breaker")
             continue
 
-        # route freshly-armed setups through risk
+        # route freshly-armed setups through (optional advisor ->) risk
         for s in by_arm.get(idx, []):
+            verdict = None
+            if advisor is not None:
+                verdict = advisor.review(
+                    setup=s, symbol=config.symbol, equity=equity,
+                    recent_candles=candles[max(0, idx - 50):idx + 1],
+                    open_positions=len(broker.get_positions()), daily_pnl=daily["pnl"],
+                )
+                if verdict.action == AdvisorAction.VETO:
+                    report.rejections.append((idx, s.direction, f"advisor veto: {verdict.reason}"))
+                    log(f"advisor veto {s.direction} @ bar {idx}: {verdict.reason}")
+                    continue
             decision = risk.evaluate(
                 symbol=config.symbol, side=s.direction, entry=s.entry, stop=s.stop,
                 target=s.target, equity=equity, peak_equity=peak,
@@ -145,8 +158,12 @@ def run_once(
                 daily_pnl=daily["pnl"], day_start_equity=daily["start_equity"],
             )
             if decision.approved:
+                qty = decision.qty if verdict is None else TradeAdvisor.apply(decision.qty, verdict)
+                if qty <= 0:
+                    report.rejections.append((idx, s.direction, "advisor downsized to zero"))
+                    continue
                 order = broker.submit_bracket(
-                    symbol=config.symbol, side=s.direction, qty=decision.qty,
+                    symbol=config.symbol, side=s.direction, qty=qty,
                     entry=s.entry, stop=s.stop, target=s.target,
                     armed_index=idx, ttl=config.entry_ttl, max_hold=config.max_hold,
                 )
@@ -154,7 +171,7 @@ def run_once(
                 daily["trades"] += 1
                 log(f"submitted {s.direction} {config.symbol} "
                     f"entry={s.entry:.2f} stop={s.stop:.2f} tgt={s.target:.2f} "
-                    f"qty={decision.qty:.4f}")
+                    f"qty={qty:.4f}")
             else:
                 report.rejections.append((idx, s.direction, decision.reason))
                 log(f"rejected {s.direction} @ bar {idx}: {decision.reason}")

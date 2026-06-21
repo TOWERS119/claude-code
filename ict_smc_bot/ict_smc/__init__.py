@@ -35,6 +35,12 @@ from .live import (
     LiveOrderResult, LiveRunReport, run_live_once, urllib_http,
 )
 from .routine import run_routine, RoutineResult
+from .glm import GlmClient, GlmResponse, GlmError, GlmParseError, extract_json
+from .advisor import TradeAdvisor, AdvisorVerdict, AdvisorAction
+from .research import (
+    run_research, ResearchReport, ProposalResult, sanitize_proposal,
+    compute_noise_floor, FIELD_SPECS,
+)
 
 __all__ = [
     "Candle",
@@ -93,4 +99,21 @@ __all__ = [
     # routine
     "run_routine",
     "RoutineResult",
+    # GLM client (capabilities 3 & 4)
+    "GlmClient",
+    "GlmResponse",
+    "GlmError",
+    "GlmParseError",
+    "extract_json",
+    # GLM trade advisor (capability 4)
+    "TradeAdvisor",
+    "AdvisorVerdict",
+    "AdvisorAction",
+    # GLM strategy research (capability 3)
+    "run_research",
+    "ResearchReport",
+    "ProposalResult",
+    "sanitize_proposal",
+    "compute_noise_floor",
+    "FIELD_SPECS",
 ]

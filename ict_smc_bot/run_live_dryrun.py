@@ -35,6 +35,8 @@ from ict_smc.risk import RiskManager
 from ict_smc.memory import Memory
 from ict_smc.notify import ConsoleNotifier
 from ict_smc.live import SimVenueClient, AlpacaClient, LiveBroker, run_live_once
+from ict_smc.glm import GlmClient
+from ict_smc.advisor import TradeAdvisor
 
 
 def _config(args) -> BotConfig:
@@ -45,6 +47,16 @@ def _config(args) -> BotConfig:
     return cfg
 
 
+def _build_advisor(args, cfg):
+    """Optional GLM trade advisor (capability 4). Needs GLM_API_KEY in env."""
+    if not args.glm_advisor:
+        return None
+    client = GlmClient(base_url=cfg.glm_base_url, model=args.glm_model,
+                       timeout=cfg.glm_timeout)
+    return TradeAdvisor(client, enabled=True, fail_mode=args.glm_fail_mode,
+                        min_size_factor=cfg.glm_min_size_factor)
+
+
 def run_sim(args, cfg, candles) -> int:
     """Replay a schedule: each tick is one run_live_once on a growing window."""
     warmup, ticks = args.warmup, args.ticks
@@ -52,6 +64,7 @@ def run_sim(args, cfg, candles) -> int:
     sim = SimVenueClient(equity=cfg.starting_equity)
     broker = LiveBroker(sim, symbol=cfg.symbol, allow_live=True)
     risk = RiskManager(cfg.limits)
+    advisor = _build_advisor(args, cfg)
     state_dir = tempfile.mkdtemp(prefix="dryrun_")
     memory = Memory(state_dir)
     os.environ["BOT_ALLOW_LIVE"] = "1"  # arm the sim venue (no real money involved)
@@ -62,7 +75,7 @@ def run_sim(args, cfg, candles) -> int:
     try:
         for k in range(warmup, len(sub) + 1):
             window = sub[:k]
-            rep = run_live_once(cfg, broker, risk, memory, window)
+            rep = run_live_once(cfg, broker, risk, memory, window, advisor=advisor)
             if rep.skipped:
                 continue
             ticks_run += 1
@@ -105,9 +118,10 @@ def run_alpaca(args, cfg, candles) -> int:
     risk = RiskManager(cfg.limits)
     memory = Memory(cfg.state_dir)
     notifier = ConsoleNotifier()
+    advisor = _build_advisor(args, cfg)
     print(f"== LIVE tick against Alpaca PAPER sandbox ({cfg.symbol}) ==")
     print(f"account equity: {broker.get_equity():.2f}")
-    rep = run_live_once(cfg, broker, risk, memory, candles, notifier=notifier)
+    rep = run_live_once(cfg, broker, risk, memory, candles, advisor=advisor, notifier=notifier)
     print(rep.summary())
     return 0
 
@@ -126,6 +140,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--risk-pct", type=float, default=0.01)
     ap.add_argument("--max-trades-per-day", type=int, default=3)
     ap.add_argument("--max-notional", type=float, default=2000.0)
+    ap.add_argument("--glm-advisor", action="store_true",
+                    help="consult GLM as a subtractive trade advisor (needs GLM_API_KEY)")
+    ap.add_argument("--glm-model", default="glm-4.6")
+    ap.add_argument("--glm-fail-mode", choices=["closed", "open"], default="closed")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")

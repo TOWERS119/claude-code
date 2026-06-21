@@ -29,6 +29,13 @@ class BotConfig:
     max_hold: int = 60           # max bars to hold a filled position
     bars_per_day: int = 96       # for daily counter rollover (96 = 15m bars/day)
     flatten_on_killswitch: bool = True
+    # --- optional GLM integration (off by default; key stays a secret) ---
+    glm_enabled: bool = False
+    glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    glm_model: str = "glm-4.6"
+    glm_fail_mode: str = "closed"        # "closed" | "open"
+    glm_min_size_factor: float = 0.0
+    glm_timeout: int = 20
     limits: RiskLimits = field(default_factory=RiskLimits)
     params: Params = field(default_factory=Params)
 
@@ -41,6 +48,13 @@ def _env_float(name: str, default: float) -> float:
 def _env_int(name: str, default: int) -> int:
     v = os.environ.get(name)
     return int(v) if v is not None else default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes", "y")
 
 
 def from_env(prefix: str = "BOT_") -> BotConfig:
@@ -68,6 +82,13 @@ def from_env(prefix: str = "BOT_") -> BotConfig:
     wl = os.environ.get(f"{prefix}RISK_WHITELIST")
     if wl:
         lim.instrument_whitelist = tuple(s.strip() for s in wl.split(",") if s.strip())
+
+    cfg.glm_enabled = _env_bool(f"{prefix}GLM_ENABLED", cfg.glm_enabled)
+    cfg.glm_base_url = os.environ.get(f"{prefix}GLM_BASE_URL", cfg.glm_base_url)
+    cfg.glm_model = os.environ.get(f"{prefix}GLM_MODEL", cfg.glm_model)
+    cfg.glm_fail_mode = os.environ.get(f"{prefix}GLM_FAIL_MODE", cfg.glm_fail_mode)
+    cfg.glm_min_size_factor = _env_float(f"{prefix}GLM_MIN_SIZE_FACTOR", cfg.glm_min_size_factor)
+    cfg.glm_timeout = _env_int(f"{prefix}GLM_TIMEOUT", cfg.glm_timeout)
     return cfg
 
 

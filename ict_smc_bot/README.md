@@ -38,12 +38,18 @@ ict_smc_bot/
 │   ├── live.py         # VenueClient + safety-gated LiveBroker + run_live_once
 │   ├── routine.py      # run_routine: scheduled step + notify + weekly review
 │   └── data.py         # CSV loader + synthetic OHLC generator
+│   ├── glm.py          # GlmClient (Zhipu, OpenAI-compatible) + robust JSON extract
+│   ├── advisor.py      # TradeAdvisor: subtractive GLM gate (veto/downsize)
+│   ├── research.py     # GLM strategy proposals judged by walk_forward + noise floor
+│   └── http.py         # shared injectable HTTP transport
 ├── run_backtest.py     # CLI: full / train-test / walk-forward research report
 ├── run_bot.py          # CLI: stateless paper-trading "run once" (resumable)
+├── run_glm_research.py # CLI: GLM proposes strategies, walk-forward judges them
 ├── fetch_coinbase.py   # pull real OHLCV (public API, no key) into a CSV
 ├── strategy_spec.md    # the numeric rule spec
 ├── ROUTINE.md          # operating the bot as a scheduled agent (paper/live)
-└── tests/              # 46 tests: strategy + risk/exec/engine + infra
+├── GLM.md              # optional GLM integration (capabilities 3 & 4)
+└── tests/              # 89 tests: strategy + risk/exec/engine + infra + glm
 ```
 
 ## Running it as a scheduled agent
@@ -62,6 +68,27 @@ HTTP, fully unit-tested without keys; see [`ROUTINE.md`](ROUTINE.md) for the
 go-live snippet. The whole live path is also testable offline via `SimVenueClient`,
 and `CoinbaseClient` remains a documented skeleton (Coinbase Advanced needs
 ES256/JWT signing + has no usable sandbox).
+
+## GLM integration (optional, off by default)
+
+GLM (Zhipu AI, e.g. `glm-4.6`) can plug in two ways — see [`GLM.md`](GLM.md).
+Both share `GlmClient` (OpenAI-compatible, injectable HTTP, key from
+`GLM_API_KEY` in the env only) and are **off unless `BOT_GLM_ENABLED=1`**.
+
+- **Strategy research (capability 3)** — GLM proposes *parameter sets* (never
+  code; a whitelist of `Params` fields, clamped to safe ranges), each judged by
+  the same `walk_forward` rig and compared to the random-data **noise floor**.
+  Proposals that don't clear the floor are flagged `SUB-NOISE-FLOOR`. Cost fields
+  are excluded so GLM can't fake profit by lowering costs.
+  `GLM_API_KEY=… python3 run_glm_research.py --csv data.csv --rounds 3`
+- **Trade decision-maker (capability 4)** — `TradeAdvisor` reviews a setup the
+  strategy already produced and may only **veto** or **downsize** it
+  (`size_factor` clamped to [0,1] in code). It cannot create a trade, increase
+  size, or relax the `RiskManager`, which stays the final authority. **Fail-closed
+  by default** (GLM error/timeout → skip the trade).
+
+GLM **cannot create edge** here: research is judged by the same brutal rig, and
+as a decision-maker it's strictly subtractive behind the RiskManager.
 
 ## The full bot (strategy + risk + execution + memory)
 
