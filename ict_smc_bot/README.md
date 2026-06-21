@@ -8,6 +8,24 @@ This is the **strategy + validation layer** of the agent architecture in
 [`../notes/trading-knowledge-base.md`](../notes/trading-knowledge-base.md) (§4).
 It is a *scaffold to test rules*, **not** a profitable system — see the caveats.
 
+## Quickstart (GLM features, one command)
+
+The only thing to add is a GLM API key (no installs, no broker keys for this
+path — data comes from the keyless Coinbase endpoint, trading is paper-only):
+
+```bash
+export GLM_API_KEY=...        # from Zhipu / z.ai
+
+# GLM proposes strategies; the walk-forward rig judges them vs. the noise floor
+python3 quickstart.py research --csv findings/data/BTC-USD_1h.csv
+
+# Paper simulator with GLM as a subtractive (veto/downsize) trade advisor
+python3 quickstart.py advisor  --csv findings/data/BTC-USD_1h.csv
+```
+
+Drop `--csv` to fetch live BTC-USD from Coinbase instead. No key needed for plain
+backtests: `python3 run_backtest.py --synthetic`.
+
 ## Why it's built this way
 
 - **Pure standard library.** No numpy/pandas. It runs unchanged inside a

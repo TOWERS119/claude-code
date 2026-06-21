@@ -5,6 +5,21 @@ capabilities. **Off by default.** Both share one client (`ict_smc/glm.py`),
 pure-stdlib, with an injectable HTTP transport (so everything is unit-tested
 without keys or network) and the API key read from the environment only.
 
+## Quickstart (one command)
+
+The fastest way to start — only needs `GLM_API_KEY` (no installs, no broker keys;
+data from the keyless Coinbase endpoint or `--csv` for offline):
+
+```bash
+export GLM_API_KEY=...
+python3 quickstart.py research --csv findings/data/BTC-USD_1h.csv   # capability 3
+python3 quickstart.py advisor  --csv findings/data/BTC-USD_1h.csv   # capability 4 (paper sim)
+```
+
+Both refuse cleanly (no network) if `GLM_API_KEY` is unset. `research` prints a
+ranked, noise-floor-flagged table; `advisor` prints a paper run report, a buy &
+hold comparison, and a count of GLM veto/downsize actions.
+
 ## Configuration
 
 ```
