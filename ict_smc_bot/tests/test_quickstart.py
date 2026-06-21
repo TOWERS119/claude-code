@@ -39,18 +39,18 @@ class TestQuickstart(unittest.TestCase):
         os.environ.pop("GLM_API_KEY", None)
 
     def test_research_runs_offline(self):
-        quickstart._CLIENT_FACTORY = lambda *, model: _FakeResearchClient()
+        quickstart._CLIENT_FACTORY = lambda *, model, base_url: _FakeResearchClient()
         rc = quickstart.main(["research", "--csv", DATA, "--rounds", "1",
                               "--batch", "2", "--n-folds", "3"])
         self.assertEqual(rc, 0)
 
     def test_advisor_runs_offline_veto(self):
-        quickstart._CLIENT_FACTORY = lambda *, model: _FakeAdvisorClient({"action": "veto"})
+        quickstart._CLIENT_FACTORY = lambda *, model, base_url: _FakeAdvisorClient({"action": "veto"})
         rc = quickstart.main(["advisor", "--csv", DATA])
         self.assertEqual(rc, 0)
 
     def test_advisor_runs_offline_downsize(self):
-        quickstart._CLIENT_FACTORY = lambda *, model: _FakeAdvisorClient(
+        quickstart._CLIENT_FACTORY = lambda *, model, base_url: _FakeAdvisorClient(
             {"action": "downsize", "size_factor": 0.5})
         rc = quickstart.main(["advisor", "--csv", DATA])
         self.assertEqual(rc, 0)
@@ -58,7 +58,7 @@ class TestQuickstart(unittest.TestCase):
     def test_refuses_without_key(self):
         os.environ.pop("GLM_API_KEY", None)
         # must refuse before constructing a client or touching the network
-        quickstart._CLIENT_FACTORY = lambda *, model: (_ for _ in ()).throw(
+        quickstart._CLIENT_FACTORY = lambda *, model, base_url: (_ for _ in ()).throw(
             AssertionError("client must not be built without a key"))
         self.assertEqual(quickstart.main(["research", "--csv", DATA]), 2)
         self.assertEqual(quickstart.main(["advisor", "--csv", DATA]), 2)

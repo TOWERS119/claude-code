@@ -93,7 +93,8 @@ def extract_json(text: str) -> object:
 
 
 class GlmClient:
-    DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+    DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"  # Zhipu (China)
+    ZAI_BASE_URL = "https://api.z.ai/api/paas/v4"              # z.ai (international)
 
     def __init__(
         self,

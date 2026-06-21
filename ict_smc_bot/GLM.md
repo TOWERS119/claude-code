@@ -20,12 +20,18 @@ Both refuse cleanly (no network) if `GLM_API_KEY` is unset. `research` prints a
 ranked, noise-floor-flagged table; `advisor` prints a paper run report, a buy &
 hold comparison, and a count of GLM veto/downsize actions.
 
+**International (z.ai) accounts:** point the quickstart at the z.ai endpoint with
+`export BOT_GLM_BASE_URL=https://api.z.ai/api/paas/v4` (or `--base-url ...`). GLM
+is pay-per-use — the account needs a balance / resource package or calls return
+`1113: Insufficient balance`.
+
 ## Configuration
 
 ```
 BOT_GLM_ENABLED=1                 # master switch (default off)
 BOT_GLM_MODEL=glm-4.6             # "latest version" is just the model id
-BOT_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4   # or the z.ai endpoint
+BOT_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4   # Zhipu (China). For z.ai
+                                                        # (international): https://api.z.ai/api/paas/v4
 BOT_GLM_FAIL_MODE=closed          # closed (default) | open
 BOT_GLM_MIN_SIZE_FACTOR=0.0       # floor on advisor downsizing
 BOT_GLM_TIMEOUT=20

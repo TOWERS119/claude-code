@@ -55,11 +55,11 @@ def _load_candles(args):
 
 def _make_client(args):
     """Build the GLM client (overridable in tests via _CLIENT_FACTORY)."""
-    return _CLIENT_FACTORY(model=args.model)
+    return _CLIENT_FACTORY(model=args.model, base_url=args.base_url)
 
 
-def _default_client_factory(*, model):
-    return GlmClient(model=model)
+def _default_client_factory(*, model, base_url):
+    return GlmClient(base_url=base_url, model=model)
 
 
 # Indirection so tests can inject a fake client without network/keys.
@@ -151,7 +151,11 @@ def main(argv) -> int:
         p.add_argument("--symbol", default="BTC-USD")
         p.add_argument("--granularity", type=int, default=3600, help="seconds (3600=1h)")
         p.add_argument("--bars", type=int, default=2000)
-        p.add_argument("--model", default="glm-4.6")
+        p.add_argument("--model", default=os.environ.get("BOT_GLM_MODEL", "glm-4.6"))
+        p.add_argument("--base-url",
+                       default=os.environ.get("BOT_GLM_BASE_URL", GlmClient.DEFAULT_BASE_URL),
+                       help="GLM endpoint; for z.ai (international) use "
+                            "https://api.z.ai/api/paas/v4 (or set BOT_GLM_BASE_URL)")
 
     pr = sub.add_parser("research", help="GLM proposes strategies; walk-forward judges them")
     common(pr)
