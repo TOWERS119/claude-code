@@ -108,7 +108,9 @@ class GlmClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.http = http or urllib_http
+        # bind the configured timeout into the default transport while keeping the
+        # 4-arg HttpFn contract (injected fakes provide their own transport)
+        self.http = http or (lambda m, u, h, b=None: urllib_http(m, u, h, b, timeout=timeout))
         self._api_key = api_key
         self.key_name = key_name
         self.timeout = timeout

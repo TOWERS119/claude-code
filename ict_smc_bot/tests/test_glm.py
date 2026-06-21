@@ -95,6 +95,24 @@ class TestGlmClient(unittest.TestCase):
         resp = c.chat([{"role": "user", "content": "x"}])
         self.assertNotIn("secret-key", json.dumps(resp.raw))
 
+    def test_default_transport_honors_timeout(self):
+        # when no transport is injected, the configured timeout must reach urllib_http
+        seen = {}
+
+        def fake_urllib(method, url, headers, body=None, timeout=20):
+            seen["timeout"] = timeout
+            return 200, _chat_payload('{"ok":1}')
+
+        import ict_smc.glm as glm_mod
+        original = glm_mod.urllib_http
+        glm_mod.urllib_http = fake_urllib
+        try:
+            c = GlmClient(api_key="k", timeout=3)  # no http= -> uses default transport
+            c.chat([{"role": "user", "content": "x"}])
+        finally:
+            glm_mod.urllib_http = original
+        self.assertEqual(seen.get("timeout"), 3)
+
 
 # --------------------------------------------------------------------------- #
 class _FakeAdvisorClient:

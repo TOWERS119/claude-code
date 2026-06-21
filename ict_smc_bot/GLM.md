@@ -87,6 +87,11 @@ GLM_API_KEY=... BOT_GLM_ENABLED=1 python3 run_live_dryrun.py --sim --glm-advisor
     --csv findings/data/BTC-USD_1h.csv --ticks 100
 ```
 
+> Cost note: in `--sim` mode the advisor is consulted once per setup per tick, so
+> `--glm-advisor` makes up to `--ticks` billable GLM calls. The runner prints a
+> warning up front. Real live use (`--alpaca`, or a scheduled `run_live_once`) is
+> one tick per bar, so it's one small batch of calls per bar.
+
 ## Honesty & safety
 
 - **GLM cannot create edge.** Research proposals are judged by the same

@@ -65,6 +65,9 @@ def run_sim(args, cfg, candles) -> int:
     broker = LiveBroker(sim, symbol=cfg.symbol, allow_live=True)
     risk = RiskManager(cfg.limits)
     advisor = _build_advisor(args, cfg)
+    if advisor is not None:
+        print(f"WARNING: --glm-advisor consults GLM once per setup per tick "
+              f"(up to ~{args.ticks} ticks) — this is billable GLM API usage.")
     state_dir = tempfile.mkdtemp(prefix="dryrun_")
     memory = Memory(state_dir)
     os.environ["BOT_ALLOW_LIVE"] = "1"  # arm the sim venue (no real money involved)
