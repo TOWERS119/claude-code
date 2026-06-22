@@ -41,6 +41,7 @@ from .research import (
     run_research, ResearchReport, ProposalResult, sanitize_proposal,
     compute_noise_floor, FIELD_SPECS,
 )
+from .providers import Provider, PROVIDERS, make_client, resolve, list_providers, require_key
 
 __all__ = [
     "Candle",
@@ -116,4 +117,11 @@ __all__ = [
     "sanitize_proposal",
     "compute_noise_floor",
     "FIELD_SPECS",
+    # LLM provider registry (free + paid presets)
+    "Provider",
+    "PROVIDERS",
+    "make_client",
+    "resolve",
+    "list_providers",
+    "require_key",
 ]

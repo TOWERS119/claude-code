@@ -149,5 +149,10 @@ class GlmClient:
         return GlmResponse(text=text, raw=decoded, usage=decoded.get("usage", {}) or {})
 
     def complete_json(self, messages: List[dict], *, temperature: Optional[float] = None) -> object:
-        resp = self.chat(messages, temperature=temperature, json_mode=True)
+        try:
+            resp = self.chat(messages, temperature=temperature, json_mode=True)
+        except GlmError:
+            # some providers/models reject response_format=json_object; retry plain
+            # text and lean on extract_json to recover the JSON from the reply
+            resp = self.chat(messages, temperature=temperature, json_mode=False)
         return extract_json(resp.text)

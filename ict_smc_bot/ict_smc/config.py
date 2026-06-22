@@ -29,8 +29,9 @@ class BotConfig:
     max_hold: int = 60           # max bars to hold a filled position
     bars_per_day: int = 96       # for daily counter rollover (96 = 15m bars/day)
     flatten_on_killswitch: bool = True
-    # --- optional GLM integration (off by default; key stays a secret) ---
+    # --- optional GLM / LLM integration (off by default; key stays a secret) ---
     glm_enabled: bool = False
+    llm_provider: str = "glm"            # glm | gemini | groq | openrouter | ollama | glm-zai
     glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
     glm_model: str = "glm-4.6"
     glm_fail_mode: str = "closed"        # "closed" | "open"
@@ -84,6 +85,7 @@ def from_env(prefix: str = "BOT_") -> BotConfig:
         lim.instrument_whitelist = tuple(s.strip() for s in wl.split(",") if s.strip())
 
     cfg.glm_enabled = _env_bool(f"{prefix}GLM_ENABLED", cfg.glm_enabled)
+    cfg.llm_provider = os.environ.get(f"{prefix}LLM_PROVIDER", cfg.llm_provider)
     cfg.glm_base_url = os.environ.get(f"{prefix}GLM_BASE_URL", cfg.glm_base_url)
     cfg.glm_model = os.environ.get(f"{prefix}GLM_MODEL", cfg.glm_model)
     cfg.glm_fail_mode = os.environ.get(f"{prefix}GLM_FAIL_MODE", cfg.glm_fail_mode)
