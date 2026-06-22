@@ -40,6 +40,19 @@ class TestProviderRegistry(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve("not-a-provider")
 
+    def test_validate_known_and_unknown(self):
+        self.assertIsNone(providers.validate("groq"))
+        self.assertIsNone(providers.validate(None))   # defaults to glm
+        msg = providers.validate("bogus")
+        self.assertIsNotNone(msg)
+        self.assertIn("unknown provider", msg)
+
+    def test_require_key_reports_unknown_provider(self):
+        # a typo'd provider yields a clean message, not a ValueError
+        msg = require_key("bogus")
+        self.assertIsNotNone(msg)
+        self.assertIn("unknown provider", msg)
+
     def test_require_key_reports_missing(self):
         os.environ.pop("GROQ_API_KEY", None)
         msg = require_key("groq")

@@ -67,6 +67,15 @@ def list_providers() -> List[Provider]:
     return list(PROVIDERS.values())
 
 
+def validate(provider: Optional[str]) -> Optional[str]:
+    """Return None if ``provider`` is a known name, else a clean error message.
+    Used by the CLIs because argparse only validates ``choices`` for values passed
+    on the command line, not for env-var-sourced defaults (BOT_LLM_PROVIDER)."""
+    if (provider or "glm").lower() not in PROVIDERS:
+        return f"unknown provider {provider!r}; choose from {sorted(PROVIDERS)}"
+    return None
+
+
 def make_client(provider: str = "glm", *, model: Optional[str] = None,
                 base_url: Optional[str] = None, api_key: Optional[str] = None,
                 http: Optional[HttpFn] = None, timeout: int = 20) -> GlmClient:
@@ -87,7 +96,10 @@ def make_client(provider: str = "glm", *, model: Optional[str] = None,
 
 def require_key(provider: str) -> Optional[str]:
     """Return None if the provider is ready, else a user-facing error message
-    naming the missing env var and where to get a free key."""
+    (unknown provider, or the missing env var and where to get a free key)."""
+    unknown = validate(provider)
+    if unknown:
+        return unknown
     p = resolve(provider)
     if not p.needs_key:
         return None

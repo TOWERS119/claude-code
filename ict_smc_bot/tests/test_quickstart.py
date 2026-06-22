@@ -63,6 +63,17 @@ class TestQuickstart(unittest.TestCase):
         self.assertEqual(quickstart.main(["research", "--csv", DATA]), 2)
         self.assertEqual(quickstart.main(["advisor", "--csv", DATA]), 2)
 
+    def test_unknown_env_provider_refuses_cleanly(self):
+        # a typo'd BOT_LLM_PROVIDER (argparse skips choices for defaults) exits 2,
+        # not a traceback, and never builds a client
+        os.environ["BOT_LLM_PROVIDER"] = "bogus"
+        quickstart._CLIENT_FACTORY = lambda *, provider, model, base_url: (_ for _ in ()).throw(
+            AssertionError("client must not be built for an unknown provider"))
+        try:
+            self.assertEqual(quickstart.main(["research", "--csv", DATA]), 2)
+        finally:
+            os.environ.pop("BOT_LLM_PROVIDER", None)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

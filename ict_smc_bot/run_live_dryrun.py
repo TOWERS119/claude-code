@@ -153,6 +153,12 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--glm-fail-mode", choices=["closed", "open"], default="closed")
     args = ap.parse_args(argv)
 
+    if args.glm_advisor:  # catch a typo'd BOT_LLM_PROVIDER cleanly (argparse skips defaults)
+        bad = providers.validate(args.provider)
+        if bad:
+            print(bad, file=sys.stderr)
+            return 2
+
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
     candles = data.from_csv(args.csv)
     cfg = _config(args)
