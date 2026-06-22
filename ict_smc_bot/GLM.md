@@ -1,24 +1,46 @@
-# GLM integration
+# LLM integration
 
-Optional integration of GLM (Zhipu AI's latest model, e.g. `glm-4.6`) for two
-capabilities. **Off by default.** Both share one client (`ict_smc/glm.py`),
-pure-stdlib, with an injectable HTTP transport (so everything is unit-tested
-without keys or network) and the API key read from the environment only.
+Optional integration of an LLM for two capabilities — strategy research and a
+subtractive trade advisor. **Off by default.** Everything shares one
+OpenAI-compatible client (`ict_smc/glm.py`), pure-stdlib, with an injectable HTTP
+transport (so it's unit-tested without keys or network) and the API key read
+from the environment only.
+
+## Providers (pick one with `--provider`)
+
+GLM is one option; you can also use free, no-credit-card alternatives. The
+registry lives in `ict_smc/providers.py` (`make_client`).
+
+| `--provider` | key env var | default model | free? | signup |
+|---|---|---|---|---|
+| `gemini` | `GEMINI_API_KEY` | `gemini-2.5-flash` | yes (no card) | aistudio.google.com/app/apikey |
+| `groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | yes (no card) | console.groq.com/keys |
+| `openrouter` | `OPENROUTER_API_KEY` | `deepseek/deepseek-r1:free` | yes (free models) | openrouter.ai/keys |
+| `ollama` | none (local) | `llama3.1` | yes (fully local) | ollama.com |
+| `glm` / `glm-zai` | `GLM_API_KEY` | `glm-4.6` | pay-per-use | open.bigmodel.cn / z.ai |
+
+Caveats: Gemini's *free* tier may use your prompts to improve Google's models
+(our prompts are just numeric price data); GLM is pay-per-use and returns
+`1113: Insufficient balance` if the account has no balance; `ollama` keeps
+everything local (run `ollama serve` first). Set `BOT_LLM_PROVIDER` to choose a
+default without passing `--provider` each time.
 
 ## Quickstart (one command)
 
-The fastest way to start — only needs `GLM_API_KEY` (no installs, no broker keys;
-data from the keyless Coinbase endpoint or `--csv` for offline):
+No installs, no broker keys; data from the keyless Coinbase endpoint or `--csv`
+for offline. Set the chosen provider's key, then:
 
 ```bash
-export GLM_API_KEY=...
-python3 quickstart.py research --csv findings/data/BTC-USD_1h.csv   # capability 3
-python3 quickstart.py advisor  --csv findings/data/BTC-USD_1h.csv   # capability 4 (paper sim)
+export GROQ_API_KEY=...    # or GEMINI_API_KEY / OPENROUTER_API_KEY / GLM_API_KEY
+python3 quickstart.py research --provider groq   --csv findings/data/BTC-USD_1h.csv  # capability 3
+python3 quickstart.py advisor  --provider gemini --csv findings/data/BTC-USD_1h.csv  # capability 4 (paper sim)
 ```
 
-Both refuse cleanly (no network) if `GLM_API_KEY` is unset. `research` prints a
-ranked, noise-floor-flagged table; `advisor` prints a paper run report, a buy &
-hold comparison, and a count of GLM veto/downsize actions.
+Both refuse cleanly (no network) if the provider's key is unset, naming the env
+var and where to get a free key. `research` prints a ranked, noise-floor-flagged
+table; `advisor` prints a paper run report, a buy & hold comparison, and a count
+of veto/downsize actions. (`run_glm_research.py` and `run_live_dryrun.py
+--glm-advisor` take the same `--provider` flag.)
 
 **International (z.ai) accounts:** point the quickstart at the z.ai endpoint with
 `export BOT_GLM_BASE_URL=https://api.z.ai/api/paas/v4` (or `--base-url ...`). GLM

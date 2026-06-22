@@ -35,7 +35,7 @@ from ict_smc.risk import RiskManager
 from ict_smc.memory import Memory
 from ict_smc.notify import ConsoleNotifier
 from ict_smc.live import SimVenueClient, AlpacaClient, LiveBroker, run_live_once
-from ict_smc.glm import GlmClient
+from ict_smc import providers
 from ict_smc.advisor import TradeAdvisor
 
 
@@ -48,11 +48,11 @@ def _config(args) -> BotConfig:
 
 
 def _build_advisor(args, cfg):
-    """Optional GLM trade advisor (capability 4). Needs GLM_API_KEY in env."""
+    """Optional LLM trade advisor (capability 4). Needs the provider's key in env."""
     if not args.glm_advisor:
         return None
-    client = GlmClient(base_url=cfg.glm_base_url, model=args.glm_model,
-                       timeout=cfg.glm_timeout)
+    client = providers.make_client(args.provider, model=args.glm_model,
+                                   timeout=cfg.glm_timeout)
     return TradeAdvisor(client, enabled=True, fail_mode=args.glm_fail_mode,
                         min_size_factor=cfg.glm_min_size_factor)
 
@@ -144,8 +144,12 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--max-trades-per-day", type=int, default=3)
     ap.add_argument("--max-notional", type=float, default=2000.0)
     ap.add_argument("--glm-advisor", action="store_true",
-                    help="consult GLM as a subtractive trade advisor (needs GLM_API_KEY)")
-    ap.add_argument("--glm-model", default="glm-4.6")
+                    help="consult an LLM as a subtractive trade advisor (needs the provider key)")
+    ap.add_argument("--provider", default=os.environ.get("BOT_LLM_PROVIDER", "glm"),
+                    choices=sorted(providers.PROVIDERS),
+                    help="LLM provider for the advisor; free: gemini, groq, openrouter, ollama")
+    ap.add_argument("--glm-model", default=os.environ.get("BOT_GLM_MODEL"),
+                    help="override the provider's default model")
     ap.add_argument("--glm-fail-mode", choices=["closed", "open"], default="closed")
     args = ap.parse_args(argv)
 

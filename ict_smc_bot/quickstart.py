@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
-"""One-command quickstart for the GLM features.
+"""One-command quickstart for the LLM features.
 
-The only thing you need to add is a GLM API key:
+Pick a provider with --provider (default glm). Free, no-credit-card options:
+gemini, groq, openrouter, and fully-local ollama. Set the matching key, e.g.:
 
-    export GLM_API_KEY=...        # from Zhipu / z.ai
+    export GROQ_API_KEY=...       # or GEMINI_API_KEY / OPENROUTER_API_KEY / GLM_API_KEY
+                                  # (ollama needs no key)
 
 Then start with a single command (data is pulled from Coinbase's public endpoint,
 no key needed; use --csv to run fully offline against a saved file):
 
-    # GLM proposes strategies; the walk-forward rig judges them honestly
-    GLM_API_KEY=... python3 quickstart.py research --csv findings/data/BTC-USD_1h.csv
+    # the model proposes strategies; the walk-forward rig judges them honestly
+    python3 quickstart.py research --provider groq --csv findings/data/BTC-USD_1h.csv
 
-    # Run the paper simulator with GLM as a subtractive trade advisor
-    GLM_API_KEY=... python3 quickstart.py advisor  --csv findings/data/BTC-USD_1h.csv
+    # paper simulator with the model as a subtractive trade advisor
+    python3 quickstart.py advisor  --provider gemini --csv findings/data/BTC-USD_1h.csv
 
 No installs (pure standard library) and no broker keys: this path is
-paper/simulator only. The GLM advisor can only veto or shrink trades behind the
+paper/simulator only. The advisor can only veto or shrink trades behind the
 RiskManager, and research is judged by the same out-of-sample + noise-floor rig
-as everything else — GLM cannot create edge or place a real order here.
+as everything else — no model can create edge or place a real order here.
 """
 
 from __future__ import annotations
@@ -31,8 +33,7 @@ import tempfile
 
 from ict_smc import data
 from ict_smc.types import Candle, Params
-from ict_smc.glm import GlmClient
-from ict_smc import research
+from ict_smc import research, providers
 from ict_smc.advisor import TradeAdvisor
 from ict_smc.config import BotConfig
 from ict_smc.risk import RiskManager
@@ -54,34 +55,35 @@ def _load_candles(args):
 
 
 def _make_client(args):
-    """Build the GLM client (overridable in tests via _CLIENT_FACTORY)."""
-    return _CLIENT_FACTORY(model=args.model, base_url=args.base_url)
+    """Build the LLM client (overridable in tests via _CLIENT_FACTORY)."""
+    return _CLIENT_FACTORY(provider=args.provider, model=args.model, base_url=args.base_url)
 
 
-def _default_client_factory(*, model, base_url):
-    return GlmClient(base_url=base_url, model=model)
+def _default_client_factory(*, provider, model, base_url):
+    # model/base_url are None unless overridden -> the provider preset is used
+    return providers.make_client(provider, model=model, base_url=base_url)
 
 
 # Indirection so tests can inject a fake client without network/keys.
 _CLIENT_FACTORY = _default_client_factory
 
 
-def _require_key() -> bool:
-    if not os.environ.get("GLM_API_KEY"):
-        print("refusing: set GLM_API_KEY in the environment (get one from Zhipu / z.ai). "
-              "Never put it in the repo.", file=sys.stderr)
+def _require_key(provider: str) -> bool:
+    msg = providers.require_key(provider)
+    if msg:
+        print(msg, file=sys.stderr)
         return False
     return True
 
 
 def cmd_research(args) -> int:
-    if not _require_key():
+    if not _require_key(args.provider):
         return 2
     candles, source = _load_candles(args)
     base = Params(require_fvg=False, min_rr=2.0)
     client = _make_client(args)
-    print(f"running GLM strategy research on {source} "
-          f"(~{args.rounds * args.batch} proposals = billable GLM calls) ...")
+    print(f"running strategy research via '{args.provider}' on {source} "
+          f"(~{args.rounds * args.batch} proposals = billable API calls) ...")
     report = research.run_research(client, candles, base, n_rounds=args.rounds,
                                    batch_size=args.batch, n_folds=args.n_folds,
                                    logger=logging.getLogger("quickstart"))
@@ -106,7 +108,7 @@ def cmd_research(args) -> int:
 
 
 def cmd_advisor(args) -> int:
-    if not _require_key():
+    if not _require_key(args.provider):
         return 2
     candles, source = _load_candles(args)
     state_dir = tempfile.mkdtemp(prefix="quickstart_")
@@ -118,8 +120,8 @@ def cmd_advisor(args) -> int:
     client = _make_client(args)
     advisor = TradeAdvisor(client, enabled=True, fail_mode=args.fail_mode)
 
-    print(f"running the paper simulator on {source} with the GLM advisor "
-          f"(one GLM call per setup; this is billable) ...")
+    print(f"running the paper simulator on {source} with the '{args.provider}' advisor "
+          f"(one API call per setup; this is billable) ...")
     report = run_once(cfg, broker, risk, mem, candles, advisor=advisor)
 
     # count what GLM actually did (from the recorded rejections)
@@ -143,7 +145,7 @@ def cmd_advisor(args) -> int:
 
 
 def main(argv) -> int:
-    ap = argparse.ArgumentParser(description="One-command GLM quickstart (needs GLM_API_KEY)")
+    ap = argparse.ArgumentParser(description="One-command LLM quickstart (pick --provider)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def common(p):
@@ -151,11 +153,14 @@ def main(argv) -> int:
         p.add_argument("--symbol", default="BTC-USD")
         p.add_argument("--granularity", type=int, default=3600, help="seconds (3600=1h)")
         p.add_argument("--bars", type=int, default=2000)
-        p.add_argument("--model", default=os.environ.get("BOT_GLM_MODEL", "glm-4.6"))
-        p.add_argument("--base-url",
-                       default=os.environ.get("BOT_GLM_BASE_URL", GlmClient.DEFAULT_BASE_URL),
-                       help="GLM endpoint; for z.ai (international) use "
-                            "https://api.z.ai/api/paas/v4 (or set BOT_GLM_BASE_URL)")
+        p.add_argument("--provider", default=os.environ.get("BOT_LLM_PROVIDER", "glm"),
+                       choices=sorted(providers.PROVIDERS),
+                       help="LLM provider; free options: gemini, groq, openrouter, ollama "
+                            "(or set BOT_LLM_PROVIDER)")
+        p.add_argument("--model", default=os.environ.get("BOT_GLM_MODEL"),
+                       help="override the provider's default model")
+        p.add_argument("--base-url", default=os.environ.get("BOT_GLM_BASE_URL"),
+                       help="override the provider's default endpoint")
 
     pr = sub.add_parser("research", help="GLM proposes strategies; walk-forward judges them")
     common(pr)

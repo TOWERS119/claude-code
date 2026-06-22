@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""GLM strategy-research runner (capability 3).
+"""LLM strategy-research runner (capability 3).
 
-GLM proposes strategy parameter sets; each is validated by the SAME walk-forward
-out-of-sample rig used everywhere else and compared to the random-data noise
-floor. Proposals that don't clear the floor are flagged SUB-NOISE-FLOOR.
+The chosen LLM proposes strategy parameter sets; each is validated by the SAME
+walk-forward out-of-sample rig used everywhere else and compared to the
+random-data noise floor. Proposals that don't clear the floor are flagged
+SUB-NOISE-FLOOR.
 
-    GLM_API_KEY=... python3 run_glm_research.py --csv findings/data/BTC-USD_1h.csv --rounds 3
-    GLM_API_KEY=... python3 run_glm_research.py --synthetic --bars 4000 --rounds 2
+    GROQ_API_KEY=... python3 run_glm_research.py --provider groq --csv findings/data/BTC-USD_1h.csv
+    GLM_API_KEY=...  python3 run_glm_research.py --synthetic --bars 4000 --rounds 2
 
-Needs GLM_API_KEY in the environment (never the repo). Use --dry-prompt to print
-the seed prompt without calling the API.
+Pick a provider with --provider (default glm; free: gemini, groq, openrouter,
+ollama) and set its key in the environment (never the repo). Use --dry-prompt to
+print the seed prompt without calling the API.
 """
 
 from __future__ import annotations
@@ -21,12 +23,11 @@ import sys
 
 from ict_smc import data
 from ict_smc.types import Params
-from ict_smc.glm import GlmClient
-from ict_smc import research
+from ict_smc import research, providers
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description="GLM strategy research (walk-forward judged)")
+    ap = argparse.ArgumentParser(description="LLM strategy research (walk-forward judged)")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--synthetic", action="store_true")
     src.add_argument("--csv", type=str)
@@ -36,8 +37,13 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--n-folds", type=int, default=4)
     ap.add_argument("--min-oos-trades", type=int, default=10)
-    ap.add_argument("--model", default="glm-4.6")
-    ap.add_argument("--base-url", default=GlmClient.DEFAULT_BASE_URL)
+    ap.add_argument("--provider", default=os.environ.get("BOT_LLM_PROVIDER", "glm"),
+                    choices=sorted(providers.PROVIDERS),
+                    help="LLM provider; free: gemini, groq, openrouter, ollama")
+    ap.add_argument("--model", default=os.environ.get("BOT_GLM_MODEL"),
+                    help="override the provider's default model")
+    ap.add_argument("--base-url", default=os.environ.get("BOT_GLM_BASE_URL"),
+                    help="override the provider's default endpoint")
     ap.add_argument("--dry-prompt", action="store_true",
                     help="print the seed prompt and exit (no API call)")
     args = ap.parse_args(argv)
@@ -52,22 +58,23 @@ def main(argv: list[str]) -> int:
             print(f"--- {m['role']} ---\n{m['content']}\n")
         return 0
 
-    if not os.environ.get("GLM_API_KEY"):
-        print("refusing: set GLM_API_KEY in the environment (never the repo)", file=sys.stderr)
+    key_msg = providers.require_key(args.provider)
+    if key_msg:
+        print(key_msg, file=sys.stderr)
         return 2
 
     candles = (data.synthetic(n=args.bars, seed=args.seed) if args.synthetic
                else data.from_csv(args.csv))
     source = f"synthetic(n={args.bars})" if args.synthetic else args.csv
 
-    client = GlmClient(base_url=args.base_url, model=args.model)
+    client = providers.make_client(args.provider, model=args.model, base_url=args.base_url)
     report = research.run_research(
         client, candles, base, n_rounds=args.rounds, batch_size=args.batch,
         n_folds=args.n_folds, min_oos_trades=args.min_oos_trades,
         logger=logging.getLogger("research"),
     )
 
-    print(f"\n== GLM strategy research ==")
+    print(f"\n== strategy research via '{args.provider}' ==")
     print(f"source     : {source}")
     print(f"noise floor: {report.noise_floor:+.3f}R (random-data OOS expectancy)")
     print(f"proposals  : {len(report.ranked)} over {report.rounds} round(s)\n")
