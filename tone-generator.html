@@ -69,6 +69,7 @@
   input[type=number]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0 }
   input[type=number]{ -moz-appearance:textfield }
   .unit{ color:var(--dim); font-size:13px }
+  .note{ color:var(--accent); font-size:12px; opacity:.85; min-width:46px; font-variant-numeric:tabular-nums }
   .subnote{ color:var(--warn); font-size:12px; margin:2px 0 4px }
   .amhint{ color:var(--dim); font-size:12px; margin:2px 0 4px }
   input.amrate{ width:74px }
@@ -390,6 +391,18 @@ const clampAM = v => Math.min(100, Math.max(0.1, v));
 const fmtFreq = f => f >= 1000 ? String(Math.round(f)) : String(parseFloat(f.toFixed(2)));
 const fmtPan = p => p === 0 ? 'C' : (p < 0 ? 'L' + (-p) : 'R' + p);
 
+// nearest equal-tempered note (A4 = 440 Hz) with cents offset, e.g. "C5 +16¢"
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function noteName(freq){
+  if (!(freq >= 16)) return '';                  // below ~C0 there is no meaningful musical pitch
+  const midi = 69 + 12 * Math.log2(freq / 440);
+  const nearest = Math.round(midi);
+  const name = NOTE_NAMES[((nearest % 12) + 12) % 12];
+  const octave = Math.floor(nearest / 12) - 1;
+  const cents = Math.round((midi - nearest) * 100);
+  return name + octave + (cents === 0 ? '' : (cents > 0 ? ' +' : ' ') + cents + '¢');
+}
+
 /* ================= UI ================= */
 const ui = {
   playBtn:    document.getElementById('playBtn'),
@@ -431,6 +444,7 @@ function buildLayers(){
           <input class="num" type="number" min="${FMIN}" max="${FMAX}" step="any"
                  aria-label="Layer ${i + 1} frequency in hertz">
           <span class="unit">Hz</span>
+          <span class="note" aria-label="nearest musical note"></span>
         </div>
       </div>
       <input class="fslider" type="range" min="0" max="${FSTEPS}" step="1"
@@ -463,6 +477,7 @@ function buildLayers(){
       on:      card.querySelector('.switch input'),
       wave:    card.querySelector('select'),
       num:     card.querySelector('.num'),
+      note:    card.querySelector('.note'),
       fslider: card.querySelector('.fslider'),
       subnote: card.querySelector('.subnote'),
       vslider: card.querySelector('.vslider'),
@@ -484,6 +499,7 @@ function buildLayers(){
     els.fslider.addEventListener('input', () => {
       st.freq = clampFreq(parseFloat(sliderToFreq(+els.fslider.value).toFixed(2)));
       els.num.value = fmtFreq(st.freq);
+      els.note.textContent = noteName(st.freq);
       els.subnote.hidden = st.freq >= 20;
       pushFreq(i);
     });
@@ -492,6 +508,7 @@ function buildLayers(){
       if (isFinite(f)) st.freq = clampFreq(f);
       els.num.value = fmtFreq(st.freq);
       els.fslider.value = freqToSlider(st.freq);
+      els.note.textContent = noteName(st.freq);
       els.subnote.hidden = st.freq >= 20;
       pushFreq(i, 0.05);
     });
@@ -527,6 +544,7 @@ function refreshLayerUI(i){
   els.card.classList.toggle('off', !st.on);
   els.wave.value = st.wave;
   els.num.value = fmtFreq(st.freq);
+  els.note.textContent = noteName(st.freq);
   els.fslider.value = freqToSlider(st.freq);
   els.subnote.hidden = st.freq >= 20;
   els.vslider.value = st.vol;
