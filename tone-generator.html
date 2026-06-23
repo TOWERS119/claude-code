@@ -60,6 +60,8 @@
 
   select{ flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line);
     border-radius:7px; padding:6px 8px; font-size:14px }
+  #sleep{ flex:0 0 auto; width:auto }
+  .mvol #sleepLeft{ min-width:42px }
   .freqbox{ display:flex; align-items:center; gap:6px; flex:1 }
   input[type=number]{ width:110px; background:var(--panel2); color:var(--text); border:1px solid var(--line);
     border-radius:7px; padding:6px 8px; font-size:14px; font-variant-numeric:tabular-nums }
@@ -107,6 +109,17 @@
         <label for="master">Master</label>
         <input id="master" type="range" min="0" max="100" step="1" value="60" aria-label="Master volume">
         <span id="masterVal" class="val">60%</span>
+      </div>
+      <div class="mvol">
+        <label for="sleep">Sleep</label>
+        <select id="sleep" aria-label="Sleep timer — gently fade out and pause after this long">
+          <option value="0">Off</option>
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">60 min</option>
+        </select>
+        <span id="sleepLeft" class="val" aria-live="polite"></span>
       </div>
     </div>
   </header>
@@ -223,6 +236,7 @@ const PRESETS = [
 /* ================= audio engine ================= */
 let actx = null, masterGain = null, limiter = null, analyser = null, scopeBuf = null;
 let suspendTimer = null;
+let sleepTick = null, sleepDeadline = 0, sleepPauseTimer = null;   // sleep timer (fade out + pause)
 const nodes = [];   // per-layer { osc, gain, pan, lfo, amGain }
 
 function ensureAudio(){
@@ -327,6 +341,7 @@ async function setPlaying(p){
   ui.playBtn.classList.toggle('on', p);
   ui.scopeHint.style.display = p ? 'none' : '';
   if (p){
+    clearTimeout(sleepPauseTimer); sleepPauseTimer = null;   // pressing play cancels any in-progress sleep fade
     ensureAudio();                               // created inside a user gesture → allowed
     clearTimeout(suspendTimer);
     if (actx.state !== 'running'){ try { await actx.resume(); } catch (e) {} }
@@ -338,6 +353,32 @@ async function setPlaying(p){
     suspendTimer = setTimeout(() => {            // …then suspend, so pausing never pops
       if (!state.playing && actx.state === 'running') actx.suspend();
     }, 450);
+  }
+}
+
+/* ============ sleep timer: gently fade out and pause after a set time ============ */
+const fmtClock = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function armSleep(min){
+  clearInterval(sleepTick); sleepTick = null;
+  clearTimeout(sleepPauseTimer); sleepPauseTimer = null;
+  if (!min){ sleepDeadline = 0; ui.sleepLeft.textContent = ''; return; }
+  sleepDeadline = Date.now() + min * 60000;
+  ui.sleepLeft.textContent = fmtClock(sleepDeadline - Date.now());
+  sleepTick = setInterval(() => {
+    const left = sleepDeadline - Date.now();
+    if (left <= 0){ clearInterval(sleepTick); sleepTick = null; sleepFire(); }
+    else ui.sleepLeft.textContent = fmtClock(left);
+  }, 1000);
+}
+function sleepFire(){
+  ui.sleepSel.value = '0';
+  ui.sleepLeft.textContent = '';
+  sleepDeadline = 0;
+  if (actx && state.playing){
+    glide(masterGain.gain, 0, 6);                // long, gentle ~20 s fade so it never jolts you awake
+    sleepPauseTimer = setTimeout(() => { sleepPauseTimer = null; setPlaying(false); }, 22000);
+  } else {
+    setPlaying(false);
   }
 }
 
@@ -358,6 +399,8 @@ const ui = {
   presetDesc: document.getElementById('presetDesc'),
   hpNote:     document.getElementById('hpNote'),
   scopeHint:  document.getElementById('scopeHint'),
+  sleepSel:   document.getElementById('sleep'),
+  sleepLeft:  document.getElementById('sleepLeft'),
 };
 const layerEls = [];
 const presetBtns = [];
@@ -539,6 +582,7 @@ ui.master.addEventListener('input', () => {
   ui.masterVal.textContent = state.master + '%';
   if (actx && state.playing) glide(masterGain.gain, masterVal(), 0.04);
 });
+ui.sleepSel.addEventListener('change', () => armSleep(parseInt(ui.sleepSel.value, 10)));
 
 /* belt & braces for autoplay policy: any interaction revives a suspended context */
 ['pointerdown', 'keydown'].forEach(ev =>
