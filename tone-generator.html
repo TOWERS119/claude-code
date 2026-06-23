@@ -572,6 +572,7 @@ function applyPreset(idx){
   ui.presetName.textContent = p.name;
   ui.presetDesc.textContent = p.desc;
   ui.hpNote.hidden = !p.headphones;              // persistent while the preset is selected
+  saveState();                                   // preset sets values programmatically → persist explicitly
   setPlaying(true);                              // preset click is a user gesture → audio may start
 }
 
@@ -630,10 +631,47 @@ function drawScope(){
   g.shadowBlur = 0;
 }
 
+/* ================= persistence (localStorage) ================= */
+const LS_KEY = 'tonelab.v1';
+let saveTimer = null;
+function saveState(){
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ master: state.master, layers: state.layers }));
+  } catch (e) { /* storage unavailable (private mode / file restrictions) — silently skip */ }
+}
+function scheduleSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveState, 500); }
+function loadState(){
+  let data;
+  try { data = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { return; }
+  if (!data || typeof data !== 'object') return;
+  if (isFinite(data.master)) state.master = Math.min(100, Math.max(0, data.master));
+  if (Array.isArray(data.layers)) data.layers.forEach((L, i) => {
+    const st = state.layers[i];
+    if (!st || !L || typeof L !== 'object') return;          // validate every field — never trust stored JSON
+    if (typeof L.on === 'boolean') st.on = L.on;
+    if (WAVES.includes(L.wave)) st.wave = L.wave;
+    if (isFinite(L.freq)) st.freq = clampFreq(L.freq);
+    if (isFinite(L.vol)) st.vol = Math.min(100, Math.max(0, L.vol));
+    if (isFinite(L.pan)) st.pan = Math.min(100, Math.max(-100, L.pan));
+    if (typeof L.amOn === 'boolean') st.amOn = L.amOn;
+    if (isFinite(L.am)) st.am = clampAM(L.am);
+  });
+}
+
 /* ================= init ================= */
+loadState();                                     // restore last session before building the UI
+ui.master.value = state.master;
+ui.masterVal.textContent = state.master + '%';
 buildLayers();
 buildPresets();
 drawScope();
+
+// persist on change (debounced) and whenever the tab is hidden or closed
+document.getElementById('layers').addEventListener('input', scheduleSave);
+document.getElementById('layers').addEventListener('change', scheduleSave);
+ui.master.addEventListener('input', scheduleSave);
+window.addEventListener('pagehide', saveState);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveState(); });
 </script>
 </body>
 </html>
