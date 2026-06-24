@@ -96,6 +96,42 @@
   :focus-visible{ outline:2px solid var(--accent); outline-offset:2px }
   footer{ margin-top:26px; border-top:1px solid var(--line); padding-top:14px }
   footer p{ color:var(--dim); font-size:12.5px; margin:0 }
+
+  /* ---- sound library ---- */
+  .library{ margin-top:26px; border-top:1px solid var(--line); padding-top:18px }
+  .libhead h2{ font-size:18px; margin:0 0 4px }
+  .libintro{ color:var(--dim); font-size:13px; margin:0 0 14px; max-width:760px }
+  .libfilters{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px }
+  .libchip{ background:var(--panel); border:1px solid var(--line); color:var(--text);
+    border-radius:999px; padding:6px 13px; font-size:13px; cursor:pointer; text-transform:capitalize }
+  .libchip:hover{ border-color:var(--accent) }
+  .libchip.active{ background:rgba(76,201,240,.14); border-color:var(--accent); color:var(--accent) }
+  .liblist{ display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:12px }
+  .libcard{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:13px 15px;
+    display:flex; flex-direction:column; gap:7px }
+  .libcard.ext{ border-style:dashed }
+  .libtop{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px }
+  .libtop h4{ margin:0; font-size:14.5px; line-height:1.3 }
+  .libmeta{ color:var(--dim); font-size:11.5px; text-transform:uppercase; letter-spacing:.4px }
+  .libclaim{ margin:0; font-size:13px; color:var(--text) }
+  .libnote{ margin:0; font-size:12.5px; color:var(--dim) }
+  .evbadge{ flex:none; font-size:10.5px; font-weight:650; padding:3px 8px; border-radius:999px; white-space:nowrap;
+    border:1px solid transparent }
+  .ev-mod { background:rgba(72,199,116,.16);  color:#5fd38a;  border-color:rgba(72,199,116,.4) }
+  .ev-prom{ background:rgba(76,201,240,.16);  color:#6fd0f0;  border-color:rgba(76,201,240,.4) }
+  .ev-mix { background:rgba(255,209,102,.14); color:#ffd166;  border-color:rgba(255,209,102,.38) }
+  .ev-weak{ background:rgba(255,170,90,.13);  color:#ffb066;  border-color:rgba(255,170,90,.34) }
+  .ev-vw  { background:rgba(255,130,110,.12); color:#ff9b86;  border-color:rgba(255,130,110,.32) }
+  .ev-trad{ background:rgba(196,140,255,.13); color:#c89cff;  border-color:rgba(196,140,255,.36) }
+  .ev-none{ background:rgba(140,152,170,.13); color:#9aa6b6;  border-color:rgba(140,152,170,.34) }
+  .libactions{ display:flex; align-items:center; gap:12px; margin-top:2px }
+  .libload{ background:var(--accent); color:#03222f; border:none; border-radius:8px; padding:7px 14px;
+    font-size:13px; font-weight:650; cursor:pointer }
+  .libload:hover{ filter:brightness(1.1) }
+  .libsrc{ color:var(--dim); font-size:12px; text-decoration:none; border-bottom:1px dotted var(--dim) }
+  .libsrc:hover{ color:var(--accent); border-color:var(--accent) }
+  .libpop{ color:var(--dim); font-size:11px }
+  .libempty{ color:var(--dim); font-size:13px; padding:10px 2px }
 </style>
 </head>
 <body>
@@ -127,7 +163,7 @@
     </div>
   </header>
 
-  <div class="scopewrap">
+  <div class="scopewrap" id="scopewrap">
     <canvas id="scope"></canvas>
     <div id="scopeHint" class="scopehint">Press <b>&nbsp;▶ Play&nbsp;</b> to start the audio engine — browsers require a click before any sound can play.</div>
   </div>
@@ -142,8 +178,17 @@
 
   <main id="layers" class="grid"></main>
 
+  <section class="library">
+    <div class="libhead">
+      <h2>Sound Library</h2>
+      <p class="libintro">Browse binaural beats, tones and noise that are popular or underrated online. <b>Popularity isn’t proof</b> — each card shows what’s <i>claimed</i> versus what the evidence actually supports. This is a relaxation tool, not medical advice.</p>
+    </div>
+    <nav id="libFilters" class="libfilters" aria-label="Library categories"></nav>
+    <div id="libList" class="liblist"></div>
+  </section>
+
   <footer>
-    <p>All sound is synthesized locally with the Web Audio API — no network requests, no account, nothing recorded. This is a listening and relaxation tool, <b>not a medical device</b>: none of these presets diagnose, treat, or cure any condition, and the preset notes above reflect the current state of the evidence. Keep the volume comfortable, especially with headphones, and stop listening if you feel discomfort.</p>
+    <p>All sound is synthesized locally with the Web Audio API — no network requests, no account, nothing recorded. This is a listening and relaxation tool, <b>not a medical device</b>: none of these presets or library sounds diagnose, treat, or cure any condition, and every note reflects the current state of the evidence (with sources you can check). Keep the volume comfortable, especially with headphones, and stop listening if you feel discomfort.</p>
   </footer>
 
 </div>
@@ -238,6 +283,178 @@ const PRESETS = [
       { on: true, wave: 'sine', freq: 330, vol: 22, pan: 0, amOn: true, am: 27.3 }
     ]
   }
+];
+
+/* ================= sound library =================
+   A browsable, categorised catalogue researched from scientific reviews,
+   health sources, and what is popular/underrated on YouTube/TikTok/Reddit.
+   Each entry separates the CLAIM (what people say) from an honest NOTE (what
+   the evidence actually supports) and carries an evidence tag. Loading an
+   entry configures the layers; "reference" entries are popular things that
+   are music/recordings, not synthesizable tones, so they link out instead. */
+
+// evidence tags → label + colour class
+const EVIDENCE = {
+  moderate:  { label: 'Moderate evidence',                  cls: 'ev-mod'  },
+  promising: { label: 'Promising · investigational',        cls: 'ev-prom' },
+  mixed:     { label: 'Mixed evidence',                     cls: 'ev-mix'  },
+  weak:      { label: 'Weak evidence',                      cls: 'ev-weak' },
+  veryweak:  { label: 'Very weak evidence',                 cls: 'ev-vw'   },
+  tradition: { label: 'Traditional claim · no science',     cls: 'ev-trad' },
+  none:      { label: 'Music/recording · not a tone',       cls: 'ev-none' },
+};
+
+// config builders (layers use the same schema the engine/presets use)
+const Lbin  = (c, b, v=40) => ({ layers: [ {on:true,wave:'sine',freq:c,vol:v,pan:-100,amOn:false,am:6},
+                                           {on:true,wave:'sine',freq:+(c+b).toFixed(3),vol:v,pan:100,amOn:false,am:6} ] });
+const Lmon  = (c, b, v=38) => ({ layers: [ {on:true,wave:'sine',freq:c,vol:v,pan:0,amOn:false,am:6},
+                                           {on:true,wave:'sine',freq:+(c+b).toFixed(3),vol:v,pan:0,amOn:false,am:6} ] });
+const Liso  = (c, b, v=40) => ({ layers: [ {on:true,wave:'sine',freq:c,vol:v,pan:0,amOn:true,am:b} ] });
+const Ltone = (f, v=40)    => ({ layers: [ {on:true,wave:'sine',freq:f,vol:v,pan:0,amOn:false,am:6} ] });
+const Lnoise= (col, v=46)  => ({ layers: [ {on:true,wave:col,freq:200,vol:v,pan:0,amOn:false,am:6} ] });
+
+const LIBRARY = [
+  // ---- noise colours ----
+  { name:'Brown noise', type:'Noise · −6 dB/oct', cats:['noise','focus','sleep','popular'], pop:'viral', evidence:'veryweak', hp:false,
+    claim:'Deep, rumbly low-end "waterfall" noise — hugely popular for ADHD focus and sleep (#brownnoise has 100M+ views on TikTok).',
+    note:'Genuinely effective as a masker, but formal research on brown noise specifically is essentially absent — the ADHD-focus benefit is plausible (white/pink show a small effect) yet unproven for brown. Harmless to try; about 1 in 3 people focus worse with any noise.',
+    src:'https://www.additudemag.com/brown-noise-adhd-tiktok-trend-improve-focus/', config:Lnoise('brown',48) },
+  { name:'Pink noise', type:'Noise · −3 dB/oct', cats:['noise','sleep','relax','focus'], pop:'popular', evidence:'weak', hp:false,
+    claim:'Balanced, "natural" noise like steady rainfall — used for deep sleep and memory.',
+    note:'The best-reviewed noise colour for sleep; small studies suggest noise time-locked to slow waves may deepen sleep and aid memory. But trials are small and do not always replicate — one found continuous all-night pink noise impaired next-day insight. Promising, not proven.',
+    src:'https://www.sleepfoundation.org/noise-and-sleep/pink-noise-sleep', config:Lnoise('pink',46) },
+  { name:'White noise', type:'Noise · flat', cats:['noise','sleep','focus'], pop:'popular', evidence:'weak', hp:false,
+    claim:'Bright, hissy broadband ("TV static") — the classic sleep and masking sound.',
+    note:'Most-used and most-studied, yet reviews rate the sleep evidence "very low"; it mainly helps by masking other noise (and infant sleep). Harvard cautions it may disturb deep sleep — keep it quiet. For tinnitus, brown/green are gentler.',
+    src:'https://www.health.harvard.edu/healthy-aging-and-longevity/can-white-noise-really-help-you-sleep-better', config:Lnoise('white',42) },
+  { name:'Green noise', type:'Noise · mid ~500 Hz', cats:['noise','sleep','tinnitus','underrated'], pop:'underrated', evidence:'veryweak', hp:false,
+    claim:'Mid-band "rustling leaves / ocean" noise — calmer and more natural than white.',
+    note:'The least-known colour and a community hidden gem: its mid-range emphasis can sit closer to many tinnitus pitches and feels gentler than white. Evidence is anecdotal only.',
+    src:'https://www.soundly.com/blog/white-noise-and-alternatives', config:Lnoise('green',46) },
+
+  // ---- binaural beats by goal ----
+  { name:'Delta sleep beat · 3 Hz', type:'Binaural · delta', cats:['sleep','binaural','popular'], pop:'popular', evidence:'weak', hp:true,
+    claim:'200 Hz / 203 Hz → a 3 Hz delta beat for deep sleep.',
+    note:'One of the few rates with direct support — a study found 3 Hz binaural beats actually increased measured delta brain waves. Still early; a sleep aid, not a sleep treatment. Needs headphones.',
+    src:'https://www.sleepfoundation.org/noise-and-sleep/binaural-beats', config:Lbin(200,3,34) },
+  { name:'Deep delta · 2 Hz', type:'Binaural · delta', cats:['sleep','binaural'], pop:'niche', evidence:'weak', hp:true,
+    claim:'100 Hz / 102 Hz → a 2 Hz delta beat on a gentle low carrier for night use.',
+    note:'Delta dominates deep slow-wave sleep on EEG, but whether a 2 Hz beat induces it is unproven — many people just find a steady low tone relaxing. Needs headphones.',
+    src:'https://www.sleepfoundation.org/noise-and-sleep/binaural-beats', config:Lbin(100,2,32) },
+  { name:'Theta meditation · 6 Hz', type:'Binaural · theta', cats:['meditate','creativity','binaural','underrated'], pop:'underrated', evidence:'weak', hp:true,
+    claim:'200 Hz / 206 Hz → a 6 Hz theta beat; a specific rate power-users praise for deep meditation.',
+    note:'6 Hz sits in the theta sweet spot and one study reported it induced a measurable meditative state. Evidence is weak and effects may be relaxation/expectancy. Needs headphones.',
+    src:'https://www.stevelinney.com/blog/how-to-meditate-with-binaural-beats/', config:Lbin(200,6,40) },
+  { name:'Alpha relaxation · 10 Hz', type:'Binaural · alpha', cats:['relax','focus','meditate','binaural','popular'], pop:'popular', evidence:'mixed', hp:true,
+    claim:'200 Hz / 210 Hz → a 10 Hz alpha beat for calm-but-alert relaxation and light focus.',
+    note:'Alpha is prominent in relaxed wakefulness. Binaural studies are mixed with modest effects at best — a steady tone can also simply mask distractions. Needs headphones.',
+    src:'https://www.medicalnewstoday.com/articles/320019', config:Lbin(200,10,40) },
+  { name:'Beta focus · 16 Hz', type:'Binaural · beta', cats:['focus','energy','binaural'], pop:'popular', evidence:'mixed', hp:true,
+    claim:'200 Hz / 216 Hz → a 16 Hz beta beat for alertness and concentration.',
+    note:'Beta tracks alert concentration, but evidence is mixed and inconsistent — some studies even show binaural beats reducing performance. Background aid, not a nootropic. Needs headphones.',
+    src:'https://www.healthline.com/health/binaural-beats', config:Lbin(200,16,38) },
+  { name:'Gamma 40 Hz focus', type:'Binaural · gamma', cats:['focus','energy','binaural','popular'], pop:'viral', evidence:'mixed', hp:true,
+    claim:'200 Hz / 240 Hz → the famous 40 Hz "focus & memory" beat.',
+    note:'The MIT 40 Hz light/sound research (Alzheimer’s) is real but investigational and is NOT the same as a YouTube binaural beat — there is no proven memory or Alzheimer’s benefit from beats, and an audible 40 Hz beat may even be distracting. Not a cognitive treatment. Needs headphones.',
+    src:'https://news.mit.edu/2025/evidence-40hz-gamma-stimulation-promotes-brain-health-expanding-0314', config:Lbin(200,40,34) },
+  { name:'Migraine calm · 0.5 Hz', type:'Binaural · low delta', cats:['pain','sleep','binaural'], pop:'niche', evidence:'veryweak', hp:true,
+    claim:'160 Hz / 160.5 Hz → a 0.5 Hz beat suggested for migraine/headache calm.',
+    note:'A popular suggestion with little to no direct evidence. A slow, quiet beat may relax you; it is not a treatment for migraine. Needs headphones.',
+    src:'https://www.medicinenet.com/which_frequency_is_best_for_migraines/article.htm', config:Lbin(160,0.5,30) },
+  { name:'Theta creativity · 7 Hz', type:'Binaural · theta', cats:['creativity','meditate','binaural'], pop:'niche', evidence:'weak', hp:true,
+    claim:'200 Hz / 207 Hz → a 7 Hz theta beat for free-associative, creative flow.',
+    note:'Theta is linked to drowsy, associative states; the creativity link itself is weak/anecdotal. Needs headphones.',
+    src:'https://www.medicalnewstoday.com/articles/320019', config:Lbin(200,7,40) },
+
+  // ---- speaker-friendly entrainment (underrated mechanics) ----
+  { name:'Monaural beat · 10 Hz', type:'Monaural · no headphones', cats:['relax','focus','underrated'], pop:'underrated', evidence:'veryweak', hp:false,
+    claim:'Two centred tones (200 + 210 Hz) mix in the air into an audible 10 Hz beat — works on speakers.',
+    note:'The "forgotten middle child": Oster (1973) found monaural beats give a stronger cortical response than binaural, though head-to-head studies show no clear real-world advantage. Fun to experiment with, no headphones needed.',
+    src:'https://www.diygenius.com/monaural-beats/', config:Lmon(200,10,34) },
+  { name:'Isochronic tone · 10 Hz', type:'Isochronic · no headphones', cats:['focus','energy','underrated'], pop:'underrated', evidence:'veryweak', hp:false,
+    claim:'A single 200 Hz tone switched fully on/off 10×/sec (via Pulse) — strong, consistent entrainment without headphones.',
+    note:'A power-user favourite for daytime states: more reliable entrainment than binaural and speaker-friendly. Honest tradeoffs — the pulsing feels "aggressive" to some and it does not work below ~4 Hz (poor for sleep/delta).',
+    src:'https://www.mindamend.com/brainwave-entrainment/binaural-beats-vs-isochronic-tones/', config:Liso(200,10,40) },
+
+  // ---- Schumann ----
+  { name:'Schumann 7.83 Hz', type:'Binaural · "earth" rate', cats:['meditate','relax','popular'], pop:'popular', evidence:'veryweak', hp:true,
+    claim:'Earth’s electromagnetic resonance (~7.83 Hz) rendered as a binaural beat for "grounding".',
+    note:'The real phenomenon is electromagnetic, not sound; a 7.83 Hz audio tone has no established health effect, and "earth heartbeat / DNA / consciousness" claims are unsupported. A pleasant low beat at most. Needs headphones. (See also the multi-harmonic Schumann preset above.)',
+    src:'https://en.wikipedia.org/wiki/Schumann_resonances', config:Lbin(200,7.83,38) },
+
+  // ---- solfeggio set (traditional) ----
+  { name:'528 Hz · "Miracle/Love"', type:'Solfeggio tone', cats:['solfeggio','relax','meditate','popular'], pop:'viral', evidence:'tradition', hp:false,
+    claim:'The most famous solfeggio tone; claimed "DNA repair", love and transformation.',
+    note:'No evidence sound repairs DNA — the number’s "significance" is numerology (3-6-9). Of the solfeggio set it has the most (still weak) relaxation data. Enjoy it as a pleasant calm tone, not medicine.',
+    src:'https://sine-immersive.com/blog/solfeggio-frequencies-explained', config:Ltone(528,40) },
+  { name:'432 Hz tuning', type:'Alt-tuning tone', cats:['solfeggio','relax','popular'], pop:'viral', evidence:'veryweak', hp:false,
+    claim:'"Natural/cosmic" tuning said to be mathematically superior and healing.',
+    note:'It is simply an alternative reference pitch (vs 440 Hz). A few small studies show modest relaxation/heart-rate effects, but no proven frequency-specific superiority — and "universe/DNA/wealth" claims are pseudoscience.',
+    src:'https://www.psypost.org/can-tuning-music-to-432hz-really-heal-you-scientists-explain-the-viral-trend/', config:Ltone(432,40) },
+  { name:'963 Hz · "Crown"', type:'Solfeggio tone', cats:['solfeggio','meditate','popular'], pop:'viral', evidence:'tradition', hp:false,
+    claim:'"God frequency"; claimed pineal-gland / crown-chakra activation (viral TikTok nap trend).',
+    note:'Pineal/chakra "activation" is not science. A high, pure tone some find focusing for meditation — nothing more is established.',
+    src:'https://www.humanreprogram.com/blogs/news/963-hz-frequency-pineal-gland-activation-crown-chakra', config:Ltone(963,34) },
+  { name:'174 Hz', type:'Solfeggio tone', cats:['solfeggio','pain','sleep'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'Lowest solfeggio tone; claimed pain relief and grounding.',
+    note:'Traditional/numerological, with no evidence as an analgesic. A low, steady tone some find calming.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(174,42) },
+  { name:'285 Hz', type:'Solfeggio tone', cats:['solfeggio'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'Claimed tissue and cellular "healing/regeneration".',
+    note:'Traditional claim, unproven — sound does not regenerate tissue.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(285,40) },
+  { name:'396 Hz', type:'Solfeggio tone', cats:['solfeggio','relax'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Liberation from fear/guilt", root chakra.',
+    note:'Traditional claim, unproven. Any calm is a general relaxation effect.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(396,40) },
+  { name:'417 Hz', type:'Solfeggio tone', cats:['solfeggio','creativity'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Facilitating change", clearing negativity, creativity.',
+    note:'Traditional claim, unproven.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(417,40) },
+  { name:'639 Hz', type:'Solfeggio tone', cats:['solfeggio','relax'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Connection/relationships", heart chakra.',
+    note:'Traditional claim, unproven.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(639,38) },
+  { name:'741 Hz', type:'Solfeggio tone', cats:['solfeggio','focus'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Problem-solving/detox", throat chakra.',
+    note:'Traditional claim, unproven — sound does not "detox" the body.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(741,36) },
+  { name:'852 Hz', type:'Solfeggio tone', cats:['solfeggio','meditate'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Spiritual awareness/intuition", third eye.',
+    note:'Traditional claim, unproven.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(852,34) },
+
+  // ---- tinnitus ----
+  { name:'Tinnitus masking', type:'Noise · gentle broadband', cats:['tinnitus','noise'], pop:'niche', evidence:'weak', hp:false,
+    claim:'Soft green noise to mask tinnitus and take the edge off the ringing.',
+    note:'Masking gives temporary relief. Heads-up: continuous white noise is rated overrated and may even worsen tinnitus over time — prefer brown/green, keep it quiet, and consider notched therapy (below) for an evidence-based option.',
+    src:'https://audionotch.com/blog/2026/03/17/ranked-sound-therapies-for-tinnitus/', config:Lnoise('green',38) },
+
+  // ---- reference: popular but not synthesizable tones ----
+  { name:'Notched sound therapy', type:'Reference · tinnitus', cats:['tinnitus'], pop:'underrated', evidence:'moderate', hp:false, external:true,
+    claim:'Broadband audio with YOUR exact tinnitus pitch removed — aims to reduce tinnitus, not just mask it.',
+    note:'The best-evidenced option in this whole space (a 2025 meta-analysis of 14 RCTs found benefit growing over months) — but it must be personalised to your tinnitus frequency, which a fixed generator can’t do. Use a dedicated tool.',
+    src:'https://audionotch.com/blog/2026/03/17/ranked-sound-therapies-for-tinnitus/' },
+  { name:'Nature ambience (rain/storm/fire)', type:'Reference · recordings', cats:['sleep','relax','focus','popular'], pop:'viral', evidence:'moderate', hp:false, external:true,
+    claim:'Rain, thunderstorm and crackling-fire soundscapes — perennial favourites for sleep and study.',
+    note:'Nature sounds have the best evidence in this entire space — a meta-analysis shows real stress reduction and lower physiological arousal. They are field recordings, not synthesizable tones, but they are the evidence-backed pick.',
+    src:'https://www.tandfonline.com/doi/full/10.1080/10253890.2024.2402519' },
+  { name:'Lofi study beats (Lofi Girl)', type:'Reference · music', cats:['focus','popular'], pop:'viral', evidence:'none', hp:false, external:true,
+    claim:'The iconic 24/7 "beats to relax/study to" stream (2.3B+ channel views).',
+    note:'It is music, not a tone — included because it is the most popular study-sound on the web. Plain pleasant music is actually among the better-evidenced options for mood and focus.',
+    src:'https://en.wikipedia.org/wiki/Lofi_Girl' },
+  { name:'"Weightless" — Marconi Union', type:'Reference · music', cats:['relax','popular'], pop:'popular', evidence:'weak', hp:false, external:true,
+    claim:'Widely called the "world’s most relaxing song"; a study claimed up to 65% anxiety reduction.',
+    note:'A real but small, often over-cited study. As music for relaxation the broader evidence base is decent — just don’t read the 65% figure as hard science.',
+    src:'https://www.psychiatrist.com/news/worlds-most-relaxing-song-may-reduce-anxiety-by-65/' },
+  { name:'Brain.fm-style modulated music', type:'Reference · app', cats:['focus','underrated'], pop:'underrated', evidence:'mixed', hp:false, external:true,
+    claim:'Music with rapid amplitude modulation embedded for sustained attention.',
+    note:'A smarter take than audible beats — the modulation hides inside pleasant music; a 2023 paper supports a focus effect, stronger for ADHD listeners. It is an app/music, not a tone you can build here.',
+    src:'https://www.brain.fm/blog/does-brain-fm-work-for-adhd' },
+  { name:'myNoise calibrated generators', type:'Reference · app', cats:['focus','sleep','tinnitus','underrated'], pop:'underrated', evidence:'mixed', hp:false, external:true,
+    claim:'Layered soundscapes (café, distant ocean, rain blends) calibrated to your own hearing.',
+    note:'The gold standard for tunable masking — sliders are tuned to your personal hearing thresholds. A superb external tool and an inspiration for where ToneLab could go next.',
+    src:'https://mynoise.net/' },
 ];
 
 /* ================= audio engine ================= */
@@ -681,6 +898,85 @@ function applyPreset(idx){
   setPlaying(true);                              // preset click is a user gesture → audio may start
 }
 
+/* ================= sound library UI ================= */
+const LIB_FILTERS = ['all','sleep','focus','relax','meditate','energy','creativity','pain','tinnitus','noise','solfeggio','binaural','popular','underrated'];
+const libChips = [];
+let libFilter = 'all';
+
+function buildLibrary(){
+  const bar = document.getElementById('libFilters');
+  LIB_FILTERS.forEach(f => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'libchip' + (f === libFilter ? ' active' : '');
+    b.textContent = f === 'all' ? 'All' : f;
+    b.dataset.f = f;
+    b.addEventListener('click', () => { libFilter = f; renderLib(); });
+    bar.appendChild(b);
+    libChips.push(b);
+  });
+  renderLib();
+}
+
+const POP_LABEL = { viral:'🔥 viral', popular:'popular', underrated:'💎 underrated', niche:'niche' };
+
+function renderLib(){
+  libChips.forEach(b => b.classList.toggle('active', b.dataset.f === libFilter));
+  const list = document.getElementById('libList');
+  list.innerHTML = '';
+  const items = LIBRARY.filter(e => libFilter === 'all' || e.cats.indexOf(libFilter) !== -1);
+  if (!items.length){ list.innerHTML = '<p class="libempty">Nothing in this category yet.</p>'; return; }
+  items.forEach(e => {
+    const ev = EVIDENCE[e.evidence] || EVIDENCE.none;
+    const card = document.createElement('article');
+    card.className = 'libcard' + (e.external ? ' ext' : '');
+    card.innerHTML =
+      '<div class="libtop"><h4></h4><span class="evbadge ' + ev.cls + '"></span></div>' +
+      '<div class="libmeta"></div><p class="libclaim"></p><p class="libnote"></p>' +
+      '<div class="libactions"></div>';
+    card.querySelector('h4').textContent = e.name;
+    card.querySelector('.evbadge').textContent = ev.label;
+    card.querySelector('.libmeta').textContent = e.type + ' · ' + (POP_LABEL[e.pop] || e.pop) + (e.hp ? ' · 🎧' : '');
+    card.querySelector('.libclaim').textContent = e.claim;
+    card.querySelector('.libnote').textContent = e.note;
+    const actions = card.querySelector('.libactions');
+    if (e.external){
+      const a = document.createElement('a');
+      a.className = 'libload'; a.textContent = 'Open ↗'; a.style.textDecoration = 'none';
+      a.href = e.src; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      actions.appendChild(a);
+    } else {
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'libload'; btn.textContent = '▶ Load';
+      btn.addEventListener('click', () => applyLibrary(e));
+      actions.appendChild(btn);
+    }
+    const src = document.createElement('a');
+    src.className = 'libsrc'; src.textContent = 'source'; src.href = e.src;
+    src.target = '_blank'; src.rel = 'noopener noreferrer';
+    actions.appendChild(src);
+    list.appendChild(card);
+  });
+}
+
+function applyLibrary(e){
+  const cfg = e.config;
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const src = cfg.layers[i];
+    if (src){ Object.assign(state.layers[i], src); state.layers[i].amOn = src.amOn || false; }
+    else { state.layers[i].on = false; state.layers[i].amOn = false; }
+    refreshLayerUI(i);
+  }
+  presetBtns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
+  ui.presetName.textContent = e.name;
+  ui.presetDesc.textContent = e.claim + '  ·  ' + e.note;
+  ui.hpNote.hidden = !e.hp;
+  saveState();
+  setPlaying(true);
+  const sw = document.getElementById('scopewrap');
+  if (sw && sw.scrollIntoView) sw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 /* ================= master controls ================= */
 ui.playBtn.addEventListener('click', () => setPlaying(!state.playing));
 ui.master.addEventListener('input', () => {
@@ -769,6 +1065,7 @@ ui.master.value = state.master;
 ui.masterVal.textContent = state.master + '%';
 buildLayers();
 buildPresets();
+buildLibrary();
 drawScope();
 
 // persist on change (debounced) and whenever the tab is hidden or closed
