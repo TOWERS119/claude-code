@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>ToneLab — Layered Tone &amp; Binaural Beat Generator</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#151b24; --panel2:#1d2530; --line:#2a3342;
+    --text:#dde4ee; --dim:#8c98aa; --accent:#4cc9f0; --warn:#ffd166; --off:#404a5c;
+  }
+  *{ box-sizing:border-box }
+  html,body{ margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap{ max-width:1080px; margin:0 auto; padding:22px 16px 48px }
+
+  header{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; margin-bottom:16px }
+  h1{ font-size:21px; margin:0; letter-spacing:.5px }
+  .sub{ margin:2px 0 0; color:var(--dim); font-size:13px }
+  .master{ display:flex; align-items:center; gap:16px; flex-wrap:wrap }
+  .mvol{ display:flex; align-items:center; gap:8px }
+  .mvol label{ color:var(--dim); font-size:13px }
+  .mvol input{ width:130px }
+
+  .play{ background:var(--accent); color:#03222f; border:none; border-radius:999px;
+    padding:10px 22px; font-size:15px; font-weight:650; cursor:pointer }
+  .play:hover{ filter:brightness(1.1) }
+  .play.on{ background:var(--warn); color:#2e2305 }
+
+  .scopewrap{ position:relative; height:140px; background:#0a0e15; border:1px solid var(--line);
+    border-radius:12px; overflow:hidden; margin-bottom:16px }
+  #scope{ position:absolute; inset:0; width:100%; height:100% }
+  .scopehint{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:var(--dim); font-size:13.5px; text-align:center; padding:0 16px; pointer-events:none }
+
+  .presets{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px }
+  .preset{ background:var(--panel); border:1px solid var(--line); color:var(--text);
+    border-radius:999px; padding:8px 16px; font-size:14px; cursor:pointer }
+  .preset:hover{ border-color:var(--accent) }
+  .preset.active{ background:rgba(76,201,240,.12); border-color:var(--accent); color:var(--accent) }
+
+  .desc{ background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:10px; padding:14px 18px; margin-bottom:18px }
+  .desc h2{ margin:0 0 6px; font-size:15.5px }
+  .desc p{ margin:0; color:var(--dim); font-size:13.5px }
+  .hp{ display:block; margin-top:10px; padding:9px 12px; border-radius:8px; font-size:13.5px;
+    color:var(--warn); background:rgba(255,209,102,.07); border:1px solid rgba(255,209,102,.35) }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(295px,1fr)); gap:14px }
+  .layer{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+    transition:opacity .2s, border-color .2s }
+  .layer:not(.off){ border-color:#33536b }
+  .layer.off{ opacity:.55 }
+  .lhead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px }
+  .lhead h3{ margin:0; font-size:14px; letter-spacing:.4px }
+  .row{ display:flex; align-items:center; gap:10px; margin:8px 0 }
+  .row > label{ width:40px; flex:none; color:var(--dim); font-size:12.5px; text-transform:uppercase; letter-spacing:.5px }
+  .val{ min-width:46px; text-align:right; color:var(--dim); font-size:13px; font-variant-numeric:tabular-nums }
+
+  select{ flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:7px; padding:6px 8px; font-size:14px }
+  #sleep{ flex:0 0 auto; width:auto }
+  .mvol #sleepLeft{ min-width:42px }
+  .freqbox{ display:flex; align-items:center; gap:6px; flex:1 }
+  input[type=number]{ width:110px; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:7px; padding:6px 8px; font-size:14px; font-variant-numeric:tabular-nums }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0 }
+  input[type=number]{ -moz-appearance:textfield }
+  .unit{ color:var(--dim); font-size:13px }
+  .note{ color:var(--accent); font-size:12px; opacity:.85; min-width:46px; font-variant-numeric:tabular-nums }
+  input:disabled{ opacity:.35; cursor:not-allowed }
+  input[type=range]:disabled::-webkit-slider-thumb{ background:var(--off); box-shadow:none }
+  .subnote{ color:var(--warn); font-size:12px; margin:2px 0 4px }
+  .amhint{ color:var(--dim); font-size:12px; margin:2px 0 4px }
+  input.amrate{ width:74px }
+
+  input[type=range]{ -webkit-appearance:none; appearance:none; flex:1; width:100%; height:22px;
+    background:transparent; cursor:pointer; margin:0 }
+  input[type=range]::-webkit-slider-runnable-track{ height:4px; border-radius:2px; background:var(--line) }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px; margin-top:-5px;
+    border-radius:50%; background:var(--accent); border:none; box-shadow:0 0 7px rgba(76,201,240,.55) }
+  input[type=range]::-moz-range-track{ height:4px; border-radius:2px; background:var(--line) }
+  input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:50%; background:var(--accent); border:none }
+  .fslider{ margin:0 0 2px }
+
+  .switch{ position:relative; display:inline-block; width:42px; height:24px; flex:none }
+  .switch input{ position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer }
+  .switch .knob{ position:absolute; inset:0; border-radius:12px; background:var(--off); transition:background .15s; pointer-events:none }
+  .switch .knob::after{ content:""; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%;
+    background:#cfd7e2; transition:transform .15s }
+  .switch input:checked + .knob{ background:var(--accent) }
+  .switch input:checked + .knob::after{ transform:translateX(18px) }
+
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px }
+  footer{ margin-top:26px; border-top:1px solid var(--line); padding-top:14px }
+  footer p{ color:var(--dim); font-size:12.5px; margin:0 }
+
+  /* ---- sound library ---- */
+  .library{ margin-top:26px; border-top:1px solid var(--line); padding-top:18px }
+  .libhead h2{ font-size:18px; margin:0 0 4px }
+  .libintro{ color:var(--dim); font-size:13px; margin:0 0 14px; max-width:760px }
+  .libfilters{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px }
+  .libchip{ background:var(--panel); border:1px solid var(--line); color:var(--text);
+    border-radius:999px; padding:6px 13px; font-size:13px; cursor:pointer; text-transform:capitalize }
+  .libchip:hover{ border-color:var(--accent) }
+  .libchip.active{ background:rgba(76,201,240,.14); border-color:var(--accent); color:var(--accent) }
+  .liblist{ display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:12px }
+  .libcard{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:13px 15px;
+    display:flex; flex-direction:column; gap:7px }
+  .libcard.ext{ border-style:dashed }
+  .libtop{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px }
+  .libtop h4{ margin:0; font-size:14.5px; line-height:1.3 }
+  .libmeta{ color:var(--dim); font-size:11.5px; text-transform:uppercase; letter-spacing:.4px }
+  .libclaim{ margin:0; font-size:13px; color:var(--text) }
+  .libnote{ margin:0; font-size:12.5px; color:var(--dim) }
+  .evbadge{ flex:none; font-size:10.5px; font-weight:650; padding:3px 8px; border-radius:999px; white-space:nowrap;
+    border:1px solid transparent }
+  .ev-mod { background:rgba(72,199,116,.16);  color:#5fd38a;  border-color:rgba(72,199,116,.4) }
+  .ev-prom{ background:rgba(76,201,240,.16);  color:#6fd0f0;  border-color:rgba(76,201,240,.4) }
+  .ev-mix { background:rgba(255,209,102,.14); color:#ffd166;  border-color:rgba(255,209,102,.38) }
+  .ev-weak{ background:rgba(255,170,90,.13);  color:#ffb066;  border-color:rgba(255,170,90,.34) }
+  .ev-vw  { background:rgba(255,130,110,.12); color:#ff9b86;  border-color:rgba(255,130,110,.32) }
+  .ev-trad{ background:rgba(196,140,255,.13); color:#c89cff;  border-color:rgba(196,140,255,.36) }
+  .ev-none{ background:rgba(140,152,170,.13); color:#9aa6b6;  border-color:rgba(140,152,170,.34) }
+  .libactions{ display:flex; align-items:center; gap:12px; margin-top:2px }
+  .libload{ background:var(--accent); color:#03222f; border:none; border-radius:8px; padding:7px 14px;
+    font-size:13px; font-weight:650; cursor:pointer }
+  .libload:hover{ filter:brightness(1.1) }
+  .libsrc{ color:var(--dim); font-size:12px; text-decoration:none; border-bottom:1px dotted var(--dim) }
+  .libsrc:hover{ color:var(--accent); border-color:var(--accent) }
+  .libpop{ color:var(--dim); font-size:11px }
+  .libempty{ color:var(--dim); font-size:13px; padding:10px 2px }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>ToneLab</h1>
+      <p class="sub">layered tone &amp; binaural-beat generator — six oscillators, all in your browser</p>
+    </div>
+    <div class="master">
+      <button id="playBtn" class="play" type="button">▶ Play</button>
+      <div class="mvol">
+        <label for="master">Master</label>
+        <input id="master" type="range" min="0" max="100" step="1" value="60" aria-label="Master volume">
+        <span id="masterVal" class="val">60%</span>
+      </div>
+      <div class="mvol">
+        <label for="sleep">Sleep</label>
+        <select id="sleep" aria-label="Sleep timer — gently fade out and pause after this long">
+          <option value="0">Off</option>
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">60 min</option>
+        </select>
+        <span id="sleepLeft" class="val" aria-live="polite"></span>
+      </div>
+    </div>
+  </header>
+
+  <div class="scopewrap" id="scopewrap">
+    <canvas id="scope"></canvas>
+    <div id="scopeHint" class="scopehint">Press <b>&nbsp;▶ Play&nbsp;</b> to start the audio engine — browsers require a click before any sound can play.</div>
+  </div>
+
+  <nav id="presetBar" class="presets" aria-label="Presets"></nav>
+
+  <section class="desc" aria-live="polite">
+    <h2 id="presetName">No preset selected</h2>
+    <p id="presetDesc">Pick a preset above, or flip any layer’s switch below to build your own sound. Each of the six layers is an independent oscillator with its own waveform, frequency (0.1–20,000 Hz), volume, and stereo position. Every control glides smoothly, so you can reshape the sound while it plays.</p>
+    <span id="hpNote" class="hp" hidden>🎧 <b>Headphones required.</b> A binaural beat only arises when each ear receives its own tone; over speakers the two tones simply mix in the air and the effect is largely lost.</span>
+  </section>
+
+  <main id="layers" class="grid"></main>
+
+  <section class="library">
+    <div class="libhead">
+      <h2>Sound Library</h2>
+      <p class="libintro">Browse binaural beats, tones and noise that are popular or underrated online. <b>Popularity isn’t proof</b> — each card shows what’s <i>claimed</i> versus what the evidence actually supports. This is a relaxation tool, not medical advice.</p>
+    </div>
+    <nav id="libFilters" class="libfilters" aria-label="Library categories"></nav>
+    <div id="libList" class="liblist"></div>
+  </section>
+
+  <footer>
+    <p>All sound is synthesized locally with the Web Audio API — no network requests, no account, nothing recorded. This is a listening and relaxation tool, <b>not a medical device</b>: none of these presets or library sounds diagnose, treat, or cure any condition, and every note reflects the current state of the evidence (with sources you can check). Keep the volume comfortable, especially with headphones, and stop listening if you feel discomfort.</p>
+  </footer>
+
+</div>
+
+<script>
+'use strict';
+
+/* ================= constants & state ================= */
+const NUM_LAYERS = 6;
+const FMIN = 0.1, FMAX = 20000, FSTEPS = 2000;
+const TONE_WAVES = ['sine', 'square', 'sawtooth', 'triangle'];
+const NOISE_TYPES = ['white', 'pink', 'brown', 'green'];
+const WAVES = TONE_WAVES;                         // tonal oscillator types
+const ALL_WAVES = TONE_WAVES.concat(NOISE_TYPES); // valid layer "wave" values (incl. noise)
+const isNoise = w => NOISE_TYPES.indexOf(w) !== -1;
+const DEFAULT_FREQS = [220, 330, 440, 110, 55, 880];
+
+const state = {
+  master: 60,
+  playing: false,
+  layers: Array.from({length: NUM_LAYERS}, (_, i) => ({
+    on: false, wave: 'sine', freq: DEFAULT_FREQS[i], vol: 40, pan: 0, amOn: false, am: 6
+  }))
+};
+
+/* ================= presets =================
+   Descriptions are deliberately factual and measured: they state what the
+   preset does acoustically, what the associated claim is, and how well that
+   claim is actually supported. */
+const PRESETS = [
+  {
+    name: 'Deep Rest',
+    headphones: true,
+    desc: 'Delta-band brain activity (0.5–4 Hz) is what an EEG records during deep, slow-wave sleep — the most physically restorative sleep stages. A pure tone that low is below the range of human hearing, so this preset renders a delta-rate rhythm as a binaural beat instead: a quiet 100 Hz sine in the left ear and 102.5 Hz in the right produce a perceived 2.5 Hz beat. Evidence that delta-rate beats improve sleep is limited and mixed; many people simply find steady low tones relaxing.',
+    layers: [
+      { on: true, wave: 'sine', freq: 100,   vol: 30, pan: -100 },
+      { on: true, wave: 'sine', freq: 102.5, vol: 30, pan:  100 }
+    ]
+  },
+  {
+    name: 'Focus',
+    headphones: true,
+    desc: 'Plays a 200 Hz sine tone in the left ear and 210 Hz in the right. With headphones, the brain perceives a faint third “beat” pulsing at the 10 Hz difference — an auditory illusion called a binaural beat, here at a rate matching the alpha EEG band (8–12 Hz) seen during relaxed, alert wakefulness. Research on binaural beats and attention is mixed: some small studies report modest benefits, others find none. A steady background tone can also help simply by masking distracting noise.',
+    layers: [
+      { on: true, wave: 'sine', freq: 200, vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 210, vol: 40, pan:  100 }
+    ]
+  },
+  {
+    name: 'Delta',
+    headphones: true,
+    desc: 'Delta is the slowest EEG band (about 0.5–4 Hz) and dominates deep, dreamless slow-wave sleep — the stages most linked to physical recovery. A tone that low is inaudible, so this preset plays a 180 Hz sine in the left ear and 182.5 Hz in the right, which the brain hears as a 2.5 Hz binaural beat in the delta range (headphones required). Evidence that such beats actually shift brain activity or improve sleep is limited and mixed, so treat this as a calm listening aid, not a sleep treatment. (Same mechanism as the Deep Rest preset, on a slightly higher carrier tone.)',
+    layers: [
+      { on: true, wave: 'sine', freq: 180,   vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 182.5, vol: 40, pan:  100 }
+    ]
+  },
+  {
+    name: 'Theta',
+    headphones: true,
+    desc: 'Theta (about 4–8 Hz) appears as you drift into drowsiness and light sleep, and during some deep-relaxation and meditative states. This preset plays 180 Hz in the left ear and 186 Hz in the right, producing a 6 Hz binaural beat in the theta range (headphones required). Claims that theta beats reliably trigger meditation or boost memory go beyond the current, mixed evidence; many listeners simply find a slow, steady beat calming.',
+    layers: [
+      { on: true, wave: 'sine', freq: 180, vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 186, vol: 40, pan:  100 }
+    ]
+  },
+  {
+    name: 'Alpha',
+    headphones: true,
+    desc: 'Alpha (about 8–12 Hz) is prominent during relaxed, calm wakefulness, especially with the eyes closed. This preset plays 180 Hz in the left ear and 190 Hz in the right for a 10 Hz binaural beat in the alpha range (headphones required). Studies on alpha binaural beats and relaxation or attention are mixed, with small effects at best, so think of it as a pleasant background tone rather than a guaranteed change in mental state. (The Focus preset uses the same 10 Hz beat on a 200 Hz carrier.)',
+    layers: [
+      { on: true, wave: 'sine', freq: 180, vol: 40, pan: -100 },
+      { on: true, wave: 'sine', freq: 190, vol: 40, pan:  100 }
+    ]
+  },
+  {
+    name: '528 Hz Solfeggio',
+    headphones: false,
+    desc: 'A single 528 Hz sine tone, one of the “solfeggio frequencies” popularized in the 1990s (close to the musical note C5). Claims that 528 Hz “repairs DNA” or has unique healing power are not supported by scientific evidence — controlled studies show no special effect compared with other steady tones. It is included here simply as a clean, calm reference tone that many people find pleasant for meditation or unwinding.',
+    layers: [
+      { on: true, wave: 'sine', freq: 528, vol: 40, pan: 0 }
+    ]
+  },
+  {
+    name: 'Schumann Resonance',
+    headphones: false,
+    desc: 'The Schumann resonances are electromagnetic — not acoustic — resonances of the Earth–ionosphere cavity, with a fundamental near 7.83 Hz and harmonics around 14.3, 20.8 and 27.3 Hz. Those rates are at or below the ~20 Hz floor of human hearing, so a literal 7.83 Hz tone is silent on normal speakers. Instead, each layer here is an audible carrier tone whose volume pulses at one of the Schumann frequencies (amplitude modulation), so you actually hear the 7.83 Hz rhythm as a throb rather than as a pitch. This is a sonification — a way to make the rhythm audible — not the electromagnetic phenomenon itself, and no health effects of listening have been established. Use the layer switches to add or drop harmonics, and each layer’s Pulse control to change its rate.',
+    layers: [
+      { on: true, wave: 'sine', freq: 110, vol: 45, pan: 0, amOn: true, am: 7.83 },
+      { on: true, wave: 'sine', freq: 165, vol: 32, pan: 0, amOn: true, am: 14.3 },
+      { on: true, wave: 'sine', freq: 220, vol: 26, pan: 0, amOn: true, am: 20.8 },
+      { on: true, wave: 'sine', freq: 330, vol: 22, pan: 0, amOn: true, am: 27.3 }
+    ]
+  }
+];
+
+/* ================= sound library =================
+   A browsable, categorised catalogue researched from scientific reviews,
+   health sources, and what is popular/underrated on YouTube/TikTok/Reddit.
+   Each entry separates the CLAIM (what people say) from an honest NOTE (what
+   the evidence actually supports) and carries an evidence tag. Loading an
+   entry configures the layers; "reference" entries are popular things that
+   are music/recordings, not synthesizable tones, so they link out instead. */
+
+// evidence tags → label + colour class
+const EVIDENCE = {
+  moderate:  { label: 'Moderate evidence',                  cls: 'ev-mod'  },
+  promising: { label: 'Promising · investigational',        cls: 'ev-prom' },
+  mixed:     { label: 'Mixed evidence',                     cls: 'ev-mix'  },
+  weak:      { label: 'Weak evidence',                      cls: 'ev-weak' },
+  veryweak:  { label: 'Very weak evidence',                 cls: 'ev-vw'   },
+  tradition: { label: 'Traditional claim · no science',     cls: 'ev-trad' },
+  none:      { label: 'Music/recording · not a tone',       cls: 'ev-none' },
+};
+
+// config builders (layers use the same schema the engine/presets use)
+const Lbin  = (c, b, v=40) => ({ layers: [ {on:true,wave:'sine',freq:c,vol:v,pan:-100,amOn:false,am:6},
+                                           {on:true,wave:'sine',freq:+(c+b).toFixed(3),vol:v,pan:100,amOn:false,am:6} ] });
+const Lmon  = (c, b, v=38) => ({ layers: [ {on:true,wave:'sine',freq:c,vol:v,pan:0,amOn:false,am:6},
+                                           {on:true,wave:'sine',freq:+(c+b).toFixed(3),vol:v,pan:0,amOn:false,am:6} ] });
+const Liso  = (c, b, v=40) => ({ layers: [ {on:true,wave:'sine',freq:c,vol:v,pan:0,amOn:true,am:b} ] });
+const Ltone = (f, v=40)    => ({ layers: [ {on:true,wave:'sine',freq:f,vol:v,pan:0,amOn:false,am:6} ] });
+const Lnoise= (col, v=46)  => ({ layers: [ {on:true,wave:col,freq:200,vol:v,pan:0,amOn:false,am:6} ] });
+
+const LIBRARY = [
+  // ---- noise colours ----
+  { name:'Brown noise', type:'Noise · −6 dB/oct', cats:['noise','focus','sleep','popular'], pop:'viral', evidence:'veryweak', hp:false,
+    claim:'Deep, rumbly low-end "waterfall" noise — hugely popular for ADHD focus and sleep (#brownnoise has 100M+ views on TikTok).',
+    note:'Genuinely effective as a masker, but formal research on brown noise specifically is essentially absent — the ADHD-focus benefit is plausible (white/pink show a small effect) yet unproven for brown. Harmless to try; about 1 in 3 people focus worse with any noise.',
+    src:'https://www.additudemag.com/brown-noise-adhd-tiktok-trend-improve-focus/', config:Lnoise('brown',48) },
+  { name:'Pink noise', type:'Noise · −3 dB/oct', cats:['noise','sleep','relax','focus'], pop:'popular', evidence:'weak', hp:false,
+    claim:'Balanced, "natural" noise like steady rainfall — used for deep sleep and memory.',
+    note:'The best-reviewed noise colour for sleep; small studies suggest noise time-locked to slow waves may deepen sleep and aid memory. But trials are small and do not always replicate — one found continuous all-night pink noise impaired next-day insight. Promising, not proven.',
+    src:'https://www.sleepfoundation.org/noise-and-sleep/pink-noise-sleep', config:Lnoise('pink',46) },
+  { name:'White noise', type:'Noise · flat', cats:['noise','sleep','focus'], pop:'popular', evidence:'weak', hp:false,
+    claim:'Bright, hissy broadband ("TV static") — the classic sleep and masking sound.',
+    note:'Most-used and most-studied, yet reviews rate the sleep evidence "very low"; it mainly helps by masking other noise (and infant sleep). Harvard cautions it may disturb deep sleep — keep it quiet. For tinnitus, brown/green are gentler.',
+    src:'https://www.health.harvard.edu/healthy-aging-and-longevity/can-white-noise-really-help-you-sleep-better', config:Lnoise('white',42) },
+  { name:'Green noise', type:'Noise · mid ~500 Hz', cats:['noise','sleep','tinnitus','underrated'], pop:'underrated', evidence:'veryweak', hp:false,
+    claim:'Mid-band "rustling leaves / ocean" noise — calmer and more natural than white.',
+    note:'The least-known colour and a community hidden gem: its mid-range emphasis can sit closer to many tinnitus pitches and feels gentler than white. Evidence is anecdotal only.',
+    src:'https://www.soundly.com/blog/white-noise-and-alternatives', config:Lnoise('green',46) },
+
+  // ---- binaural beats by goal ----
+  { name:'Delta sleep beat · 3 Hz', type:'Binaural · delta', cats:['sleep','binaural','popular'], pop:'popular', evidence:'weak', hp:true,
+    claim:'200 Hz / 203 Hz → a 3 Hz delta beat for deep sleep.',
+    note:'One of the few rates with direct support — a study found 3 Hz binaural beats actually increased measured delta brain waves. Still early; a sleep aid, not a sleep treatment. Needs headphones.',
+    src:'https://www.sleepfoundation.org/noise-and-sleep/binaural-beats', config:Lbin(200,3,34) },
+  { name:'Deep delta · 2 Hz', type:'Binaural · delta', cats:['sleep','binaural'], pop:'niche', evidence:'weak', hp:true,
+    claim:'100 Hz / 102 Hz → a 2 Hz delta beat on a gentle low carrier for night use.',
+    note:'Delta dominates deep slow-wave sleep on EEG, but whether a 2 Hz beat induces it is unproven — many people just find a steady low tone relaxing. Needs headphones.',
+    src:'https://www.sleepfoundation.org/noise-and-sleep/binaural-beats', config:Lbin(100,2,32) },
+  { name:'Theta meditation · 6 Hz', type:'Binaural · theta', cats:['meditate','creativity','binaural','underrated'], pop:'underrated', evidence:'weak', hp:true,
+    claim:'200 Hz / 206 Hz → a 6 Hz theta beat; a specific rate power-users praise for deep meditation.',
+    note:'6 Hz sits in the theta sweet spot and one study reported it induced a measurable meditative state. Evidence is weak and effects may be relaxation/expectancy. Needs headphones.',
+    src:'https://www.stevelinney.com/blog/how-to-meditate-with-binaural-beats/', config:Lbin(200,6,40) },
+  { name:'Alpha relaxation · 10 Hz', type:'Binaural · alpha', cats:['relax','focus','meditate','binaural','popular'], pop:'popular', evidence:'mixed', hp:true,
+    claim:'200 Hz / 210 Hz → a 10 Hz alpha beat for calm-but-alert relaxation and light focus.',
+    note:'Alpha is prominent in relaxed wakefulness. Binaural studies are mixed with modest effects at best — a steady tone can also simply mask distractions. Needs headphones.',
+    src:'https://www.medicalnewstoday.com/articles/320019', config:Lbin(200,10,40) },
+  { name:'Beta focus · 16 Hz', type:'Binaural · beta', cats:['focus','energy','binaural'], pop:'popular', evidence:'mixed', hp:true,
+    claim:'200 Hz / 216 Hz → a 16 Hz beta beat for alertness and concentration.',
+    note:'Beta tracks alert concentration, but evidence is mixed and inconsistent — some studies even show binaural beats reducing performance. Background aid, not a nootropic. Needs headphones.',
+    src:'https://www.healthline.com/health/binaural-beats', config:Lbin(200,16,38) },
+  { name:'Gamma 40 Hz focus', type:'Binaural · gamma', cats:['focus','energy','binaural','popular'], pop:'viral', evidence:'mixed', hp:true,
+    claim:'200 Hz / 240 Hz → the famous 40 Hz "focus & memory" beat.',
+    note:'The MIT 40 Hz light/sound research (Alzheimer’s) is real but investigational and is NOT the same as a YouTube binaural beat — there is no proven memory or Alzheimer’s benefit from beats, and an audible 40 Hz beat may even be distracting. Not a cognitive treatment. Needs headphones.',
+    src:'https://news.mit.edu/2025/evidence-40hz-gamma-stimulation-promotes-brain-health-expanding-0314', config:Lbin(200,40,34) },
+  { name:'Migraine calm · 0.5 Hz', type:'Binaural · low delta', cats:['pain','sleep','binaural'], pop:'niche', evidence:'veryweak', hp:true,
+    claim:'160 Hz / 160.5 Hz → a 0.5 Hz beat suggested for migraine/headache calm.',
+    note:'A popular suggestion with little to no direct evidence. A slow, quiet beat may relax you; it is not a treatment for migraine. Needs headphones.',
+    src:'https://www.medicinenet.com/which_frequency_is_best_for_migraines/article.htm', config:Lbin(160,0.5,30) },
+  { name:'Theta creativity · 7 Hz', type:'Binaural · theta', cats:['creativity','meditate','binaural'], pop:'niche', evidence:'weak', hp:true,
+    claim:'200 Hz / 207 Hz → a 7 Hz theta beat for free-associative, creative flow.',
+    note:'Theta is linked to drowsy, associative states; the creativity link itself is weak/anecdotal. Needs headphones.',
+    src:'https://www.medicalnewstoday.com/articles/320019', config:Lbin(200,7,40) },
+
+  // ---- speaker-friendly entrainment (underrated mechanics) ----
+  { name:'Monaural beat · 10 Hz', type:'Monaural · no headphones', cats:['relax','focus','underrated'], pop:'underrated', evidence:'veryweak', hp:false,
+    claim:'Two centred tones (200 + 210 Hz) mix in the air into an audible 10 Hz beat — works on speakers.',
+    note:'The "forgotten middle child": Oster (1973) found monaural beats give a stronger cortical response than binaural, though head-to-head studies show no clear real-world advantage. Fun to experiment with, no headphones needed.',
+    src:'https://www.diygenius.com/monaural-beats/', config:Lmon(200,10,34) },
+  { name:'Isochronic tone · 10 Hz', type:'Isochronic · no headphones', cats:['focus','energy','underrated'], pop:'underrated', evidence:'veryweak', hp:false,
+    claim:'A single 200 Hz tone switched fully on/off 10×/sec (via Pulse) — strong, consistent entrainment without headphones.',
+    note:'A power-user favourite for daytime states: more reliable entrainment than binaural and speaker-friendly. Honest tradeoffs — the pulsing feels "aggressive" to some and it does not work below ~4 Hz (poor for sleep/delta).',
+    src:'https://www.mindamend.com/brainwave-entrainment/binaural-beats-vs-isochronic-tones/', config:Liso(200,10,40) },
+
+  // ---- Schumann ----
+  { name:'Schumann 7.83 Hz', type:'Binaural · "earth" rate', cats:['meditate','relax','popular'], pop:'popular', evidence:'veryweak', hp:true,
+    claim:'Earth’s electromagnetic resonance (~7.83 Hz) rendered as a binaural beat for "grounding".',
+    note:'The real phenomenon is electromagnetic, not sound; a 7.83 Hz audio tone has no established health effect, and "earth heartbeat / DNA / consciousness" claims are unsupported. A pleasant low beat at most. Needs headphones. (See also the multi-harmonic Schumann preset above.)',
+    src:'https://en.wikipedia.org/wiki/Schumann_resonances', config:Lbin(200,7.83,38) },
+
+  // ---- solfeggio set (traditional) ----
+  { name:'528 Hz · "Miracle/Love"', type:'Solfeggio tone', cats:['solfeggio','relax','meditate','popular'], pop:'viral', evidence:'tradition', hp:false,
+    claim:'The most famous solfeggio tone; claimed "DNA repair", love and transformation.',
+    note:'No evidence sound repairs DNA — the number’s "significance" is numerology (3-6-9). Of the solfeggio set it has the most (still weak) relaxation data. Enjoy it as a pleasant calm tone, not medicine.',
+    src:'https://sine-immersive.com/blog/solfeggio-frequencies-explained', config:Ltone(528,40) },
+  { name:'432 Hz tuning', type:'Alt-tuning tone', cats:['solfeggio','relax','popular'], pop:'viral', evidence:'veryweak', hp:false,
+    claim:'"Natural/cosmic" tuning said to be mathematically superior and healing.',
+    note:'It is simply an alternative reference pitch (vs 440 Hz). A few small studies show modest relaxation/heart-rate effects, but no proven frequency-specific superiority — and "universe/DNA/wealth" claims are pseudoscience.',
+    src:'https://www.psypost.org/can-tuning-music-to-432hz-really-heal-you-scientists-explain-the-viral-trend/', config:Ltone(432,40) },
+  { name:'963 Hz · "Crown"', type:'Solfeggio tone', cats:['solfeggio','meditate','popular'], pop:'viral', evidence:'tradition', hp:false,
+    claim:'"God frequency"; claimed pineal-gland / crown-chakra activation (viral TikTok nap trend).',
+    note:'Pineal/chakra "activation" is not science. A high, pure tone some find focusing for meditation — nothing more is established.',
+    src:'https://www.humanreprogram.com/blogs/news/963-hz-frequency-pineal-gland-activation-crown-chakra', config:Ltone(963,34) },
+  { name:'174 Hz', type:'Solfeggio tone', cats:['solfeggio','pain','sleep'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'Lowest solfeggio tone; claimed pain relief and grounding.',
+    note:'Traditional/numerological, with no evidence as an analgesic. A low, steady tone some find calming.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(174,42) },
+  { name:'285 Hz', type:'Solfeggio tone', cats:['solfeggio'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'Claimed tissue and cellular "healing/regeneration".',
+    note:'Traditional claim, unproven — sound does not regenerate tissue.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(285,40) },
+  { name:'396 Hz', type:'Solfeggio tone', cats:['solfeggio','relax'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Liberation from fear/guilt", root chakra.',
+    note:'Traditional claim, unproven. Any calm is a general relaxation effect.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(396,40) },
+  { name:'417 Hz', type:'Solfeggio tone', cats:['solfeggio','creativity'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Facilitating change", clearing negativity, creativity.',
+    note:'Traditional claim, unproven.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(417,40) },
+  { name:'639 Hz', type:'Solfeggio tone', cats:['solfeggio','relax'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Connection/relationships", heart chakra.',
+    note:'Traditional claim, unproven.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(639,38) },
+  { name:'741 Hz', type:'Solfeggio tone', cats:['solfeggio','focus'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Problem-solving/detox", throat chakra.',
+    note:'Traditional claim, unproven — sound does not "detox" the body.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(741,36) },
+  { name:'852 Hz', type:'Solfeggio tone', cats:['solfeggio','meditate'], pop:'niche', evidence:'tradition', hp:false,
+    claim:'"Spiritual awareness/intuition", third eye.',
+    note:'Traditional claim, unproven.',
+    src:'https://ouraring.com/blog/the-benefits-of-the-9-solfeggio-frequencies/', config:Ltone(852,34) },
+
+  // ---- tinnitus ----
+  { name:'Tinnitus masking', type:'Noise · gentle broadband', cats:['tinnitus','noise'], pop:'niche', evidence:'weak', hp:false,
+    claim:'Soft green noise to mask tinnitus and take the edge off the ringing.',
+    note:'Masking gives temporary relief. Heads-up: continuous white noise is rated overrated and may even worsen tinnitus over time — prefer brown/green, keep it quiet, and consider notched therapy (below) for an evidence-based option.',
+    src:'https://audionotch.com/blog/2026/03/17/ranked-sound-therapies-for-tinnitus/', config:Lnoise('green',38) },
+
+  // ---- reference: popular but not synthesizable tones ----
+  { name:'Notched sound therapy', type:'Reference · tinnitus', cats:['tinnitus'], pop:'underrated', evidence:'moderate', hp:false, external:true,
+    claim:'Broadband audio with YOUR exact tinnitus pitch removed — aims to reduce tinnitus, not just mask it.',
+    note:'The best-evidenced option in this whole space (a 2025 meta-analysis of 14 RCTs found benefit growing over months) — but it must be personalised to your tinnitus frequency, which a fixed generator can’t do. Use a dedicated tool.',
+    src:'https://audionotch.com/blog/2026/03/17/ranked-sound-therapies-for-tinnitus/' },
+  { name:'Nature ambience (rain/storm/fire)', type:'Reference · recordings', cats:['sleep','relax','focus','popular'], pop:'viral', evidence:'moderate', hp:false, external:true,
+    claim:'Rain, thunderstorm and crackling-fire soundscapes — perennial favourites for sleep and study.',
+    note:'Nature sounds have the best evidence in this entire space — a meta-analysis shows real stress reduction and lower physiological arousal. They are field recordings, not synthesizable tones, but they are the evidence-backed pick.',
+    src:'https://www.tandfonline.com/doi/full/10.1080/10253890.2024.2402519' },
+  { name:'Lofi study beats (Lofi Girl)', type:'Reference · music', cats:['focus','popular'], pop:'viral', evidence:'none', hp:false, external:true,
+    claim:'The iconic 24/7 "beats to relax/study to" stream (2.3B+ channel views).',
+    note:'It is music, not a tone — included because it is the most popular study-sound on the web. Plain pleasant music is actually among the better-evidenced options for mood and focus.',
+    src:'https://en.wikipedia.org/wiki/Lofi_Girl' },
+  { name:'"Weightless" — Marconi Union', type:'Reference · music', cats:['relax','popular'], pop:'popular', evidence:'weak', hp:false, external:true,
+    claim:'Widely called the "world’s most relaxing song"; a study claimed up to 65% anxiety reduction.',
+    note:'A real but small, often over-cited study. As music for relaxation the broader evidence base is decent — just don’t read the 65% figure as hard science.',
+    src:'https://www.psychiatrist.com/news/worlds-most-relaxing-song-may-reduce-anxiety-by-65/' },
+  { name:'Brain.fm-style modulated music', type:'Reference · app', cats:['focus','underrated'], pop:'underrated', evidence:'mixed', hp:false, external:true,
+    claim:'Music with rapid amplitude modulation embedded for sustained attention.',
+    note:'A smarter take than audible beats — the modulation hides inside pleasant music; a 2023 paper supports a focus effect, stronger for ADHD listeners. It is an app/music, not a tone you can build here.',
+    src:'https://www.brain.fm/blog/does-brain-fm-work-for-adhd' },
+  { name:'myNoise calibrated generators', type:'Reference · app', cats:['focus','sleep','tinnitus','underrated'], pop:'underrated', evidence:'mixed', hp:false, external:true,
+    claim:'Layered soundscapes (café, distant ocean, rain blends) calibrated to your own hearing.',
+    note:'The gold standard for tunable masking — sliders are tuned to your personal hearing thresholds. A superb external tool and an inspiration for where ToneLab could go next.',
+    src:'https://mynoise.net/' },
+];
+
+/* ================= audio engine ================= */
+let actx = null, masterGain = null, limiter = null, analyser = null, scopeBuf = null;
+let suspendTimer = null;
+let sleepTick = null, sleepDeadline = 0, sleepPauseTimer = null;   // sleep timer (fade out + pause)
+const nodes = [];   // per-layer { osc, gain, pan, lfo, amGain }
+
+function ensureAudio(){
+  if (actx) return actx;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  actx = new AC();
+
+  masterGain = actx.createGain();
+  masterGain.gain.value = 0;                     // fades in on play — never clicks
+
+  // soft safety limiter: several loud layers summed can't clip the output
+  limiter = actx.createDynamicsCompressor();
+  limiter.threshold.value = -9; limiter.knee.value = 6; limiter.ratio.value = 12;
+  limiter.attack.value = 0.003; limiter.release.value = 0.25;
+
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 4096;                       // long window so very low tones are visible
+  scopeBuf = new Uint8Array(analyser.fftSize);
+
+  masterGain.connect(limiter);
+  limiter.connect(analyser);
+  analyser.connect(actx.destination);
+
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const st = state.layers[i];
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    // Each layer can be a tone OR a noise colour. oscGain / noiseGain (0 or 1)
+    // pick which source feeds the layer gain, crossfaded to avoid clicks.
+    const oscGain = actx.createGain();
+    const noiseGain = actx.createGain();
+    // LFO → amGain → gain.gain implements amplitude modulation ("Pulse"):
+    // the LFO output is *added* onto the gain param, so the layer's volume
+    // throbs at am Hz — this is how an inaudible rate (e.g. 7.83 Hz) is made
+    // hearable as a pulse riding on an audible carrier tone.
+    const lfo = actx.createOscillator();
+    const amGain = actx.createGain();
+    const noise = isNoise(st.wave);
+    osc.type = noise ? 'sine' : st.wave;         // osc.type only accepts tonal types
+    osc.frequency.value = st.freq;
+    oscGain.gain.value = noise ? 0 : 1;
+    noiseGain.gain.value = noise ? 1 : 0;
+    lfo.type = 'sine';
+    lfo.frequency.value = st.am > 0 ? st.am : 1;
+    const parts = amParts(st);
+    gain.gain.value = parts.base;
+    amGain.gain.value = parts.depth;
+    osc.connect(oscGain); oscGain.connect(gain);
+    noiseGain.connect(gain);
+    lfo.connect(amGain);
+    amGain.connect(gain.gain);
+    if (pan){ pan.pan.value = st.pan / 100; gain.connect(pan); pan.connect(masterGain); }
+    else { gain.connect(masterGain); }
+    osc.start();                                 // oscillators run forever; gain gates them (click-free)
+    lfo.start();
+    nodes[i] = { osc, gain, pan, lfo, amGain, oscGain, noiseGain, noiseSrc: null, noiseColor: null };
+    if (noise) ensureNoiseSrc(i, st.wave);
+  }
+  return actx;
+}
+
+/* ---- noise colours: generate once, cache, loop a long buffer ---- */
+const noiseBuffers = {};
+function noiseBuffer(color){
+  if (noiseBuffers[color]) return noiseBuffers[color];
+  const len = Math.floor(actx.sampleRate * 8);   // 8 s loop — long enough that the repeat is hard to hear
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  if (color === 'pink'){
+    // Paul Kellet's economical pink-noise filter (~ -3 dB/oct)
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for (let i=0;i<len;i++){
+      const w = Math.random()*2-1;
+      b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759; b2=0.96900*b2+w*0.1538520;
+      b3=0.86650*b3+w*0.3104856; b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+      d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+    }
+  } else if (color === 'brown'){
+    let last=0;                                   // leaky integrator of white (~ -6 dB/oct)
+    for (let i=0;i<len;i++){ const w=Math.random()*2-1; last=(last+0.02*w)/1.02; d[i]=last*3.5; }
+  } else if (color === 'green'){
+    // mid-band emphasis (~500 Hz) via a state-variable band-pass on white
+    let lp=0, bp=0; const f=2*Math.sin(Math.PI*500/actx.sampleRate), q=0.35;
+    for (let i=0;i<len;i++){ const w=Math.random()*2-1; lp+=f*bp; const hp=w-lp-q*bp; bp+=f*hp; d[i]=bp*0.6; }
+  } else {
+    for (let i=0;i<len;i++) d[i]=Math.random()*2-1;   // white
+  }
+  noiseBuffers[color]=buf;
+  return buf;
+}
+function ensureNoiseSrc(i, color){
+  const n = nodes[i];
+  if (n.noiseColor === color && n.noiseSrc) return;
+  if (n.noiseSrc){ try { n.noiseSrc.stop(); } catch(e){} try { n.noiseSrc.disconnect(); } catch(e){} }
+  const src = actx.createBufferSource();
+  src.buffer = noiseBuffer(color);
+  src.loop = true;
+  src.connect(n.noiseGain);
+  src.start();
+  n.noiseSrc = src;
+  n.noiseColor = color;
+}
+
+const AM_DEPTH = 0.85;                                           // pulse depth: 1 = full silence-to-peak, lower = gentler throb
+const layerGain = st => st.on ? Math.pow(st.vol / 100, 2) : 0;   // squared = more natural loudness curve
+const masterVal = () => Math.pow(state.master / 100, 2);
+
+// Split a layer's peak gain into a steady "base" plus a modulated "depth".
+// With Pulse on, the gain swings between (1-AM_DEPTH)·peak and peak at am Hz;
+// with it off, depth is 0 and the layer behaves exactly as a plain tone.
+function amParts(st){
+  const peak = layerGain(st);
+  if (st.amOn && st.on && st.am > 0) return { base: peak * (1 - AM_DEPTH / 2), depth: peak * (AM_DEPTH / 2) };
+  return { base: peak, depth: 0 };
+}
+
+function glide(param, value, tc){
+  // setTargetAtTime gives an exponential approach — no steps, no zipper noise
+  param.setTargetAtTime(value, actx.currentTime, tc);
+}
+
+function pushFreq(i, tc){ if (nodes[i]) glide(nodes[i].osc.frequency, state.layers[i].freq, tc || 0.03); }
+function pushVol(i){
+  const n = nodes[i]; if (!n) return;
+  const p = amParts(state.layers[i]);
+  glide(n.gain.gain, p.base, 0.04);
+  glide(n.amGain.gain, p.depth, 0.04);           // 0 when Pulse is off → no modulation
+}
+function pushPan(i){ const n = nodes[i]; if (n && n.pan) glide(n.pan.pan, state.layers[i].pan / 100, 0.03); }
+function pushAM(i){
+  const n = nodes[i], st = state.layers[i]; if (!n) return;
+  if (st.am > 0) glide(n.lfo.frequency, st.am, 0.03);
+  pushVol(i);                                    // re-split base/depth for the new Pulse state
+}
+function pushWave(i){
+  const n = nodes[i], st = state.layers[i];
+  if (!n) return;
+  if (isNoise(st.wave)){
+    glide(n.oscGain.gain, 0, 0.02);              // fade out the tonal path
+    if (n.noiseColor !== st.wave){
+      glide(n.noiseGain.gain, 0, 0.012);         // dip, swap to the new colour, fade back — no seam click
+      setTimeout(() => { ensureNoiseSrc(i, st.wave); glide(n.noiseGain.gain, 1, 0.02); }, 60);
+    } else {
+      ensureNoiseSrc(i, st.wave);
+      glide(n.noiseGain.gain, 1, 0.03);
+    }
+  } else {
+    glide(n.noiseGain.gain, 0, 0.02);            // fade out the noise path
+    if (n.osc.type !== st.wave){
+      glide(n.oscGain.gain, 0, 0.012);           // osc.type changes are instant and can click — dip ~60 ms around it
+      setTimeout(() => { n.osc.type = st.wave; glide(n.oscGain.gain, 1, 0.02); }, 60);
+    } else {
+      glide(n.oscGain.gain, 1, 0.03);
+    }
+  }
+}
+function syncAllAudio(){
+  if (!actx) return;
+  for (let i = 0; i < NUM_LAYERS; i++){ pushFreq(i, 0.05); pushPan(i); pushWave(i); pushAM(i); }
+}
+
+/* ============ play / pause (autoplay-policy safe) ============ */
+async function setPlaying(p){
+  state.playing = p;
+  ui.playBtn.textContent = p ? '⏸ Pause' : '▶ Play';
+  ui.playBtn.classList.toggle('on', p);
+  ui.scopeHint.style.display = p ? 'none' : '';
+  if (p){
+    clearTimeout(sleepPauseTimer); sleepPauseTimer = null;   // pressing play cancels any in-progress sleep fade
+    ensureAudio();                               // created inside a user gesture → allowed
+    clearTimeout(suspendTimer);
+    if (actx.state !== 'running'){ try { await actx.resume(); } catch (e) {} }
+    syncAllAudio();
+    glide(masterGain.gain, masterVal(), 0.06);
+  } else if (actx){
+    glide(masterGain.gain, 0, 0.05);             // fade out first…
+    clearTimeout(suspendTimer);
+    suspendTimer = setTimeout(() => {            // …then suspend, so pausing never pops
+      if (!state.playing && actx.state === 'running') actx.suspend();
+    }, 450);
+  }
+}
+
+/* ============ sleep timer: gently fade out and pause after a set time ============ */
+const fmtClock = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function armSleep(min){
+  clearInterval(sleepTick); sleepTick = null;
+  clearTimeout(sleepPauseTimer); sleepPauseTimer = null;
+  if (!min){ sleepDeadline = 0; ui.sleepLeft.textContent = ''; return; }
+  sleepDeadline = Date.now() + min * 60000;
+  ui.sleepLeft.textContent = fmtClock(sleepDeadline - Date.now());
+  sleepTick = setInterval(() => {
+    const left = sleepDeadline - Date.now();
+    if (left <= 0){ clearInterval(sleepTick); sleepTick = null; sleepFire(); }
+    else ui.sleepLeft.textContent = fmtClock(left);
+  }, 1000);
+}
+function sleepFire(){
+  ui.sleepSel.value = '0';
+  ui.sleepLeft.textContent = '';
+  sleepDeadline = 0;
+  if (actx && state.playing){
+    glide(masterGain.gain, 0, 6);                // long, gentle ~20 s fade so it never jolts you awake
+    sleepPauseTimer = setTimeout(() => { sleepPauseTimer = null; setPlaying(false); }, 22000);
+  } else {
+    setPlaying(false);
+  }
+}
+
+/* ================= frequency mapping ================= */
+const freqToSlider = f => Math.round(FSTEPS * Math.log(f / FMIN) / Math.log(FMAX / FMIN));
+const sliderToFreq = s => FMIN * Math.pow(FMAX / FMIN, s / FSTEPS);
+const clampFreq = f => Math.min(FMAX, Math.max(FMIN, f));
+const clampAM = v => Math.min(100, Math.max(0.1, v));
+const fmtFreq = f => f >= 1000 ? String(Math.round(f)) : String(parseFloat(f.toFixed(2)));
+const fmtPan = p => p === 0 ? 'C' : (p < 0 ? 'L' + (-p) : 'R' + p);
+
+// nearest equal-tempered note (A4 = 440 Hz) with cents offset, e.g. "C5 +16¢"
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function noteName(freq){
+  if (!(freq >= 16)) return '';                  // below ~C0 there is no meaningful musical pitch
+  const midi = 69 + 12 * Math.log2(freq / 440);
+  const nearest = Math.round(midi);
+  const name = NOTE_NAMES[((nearest % 12) + 12) % 12];
+  const octave = Math.floor(nearest / 12) - 1;
+  const cents = Math.round((midi - nearest) * 100);
+  return name + octave + (cents === 0 ? '' : (cents > 0 ? ' +' : ' ') + cents + '¢');
+}
+
+/* ================= UI ================= */
+const ui = {
+  playBtn:    document.getElementById('playBtn'),
+  master:     document.getElementById('master'),
+  masterVal:  document.getElementById('masterVal'),
+  presetName: document.getElementById('presetName'),
+  presetDesc: document.getElementById('presetDesc'),
+  hpNote:     document.getElementById('hpNote'),
+  scopeHint:  document.getElementById('scopeHint'),
+  sleepSel:   document.getElementById('sleep'),
+  sleepLeft:  document.getElementById('sleepLeft'),
+};
+const layerEls = [];
+const presetBtns = [];
+
+function buildLayers(){
+  const grid = document.getElementById('layers');
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const st = state.layers[i];
+    const card = document.createElement('section');
+    card.className = 'layer off';
+    card.innerHTML = `
+      <div class="lhead">
+        <h3>Layer ${i + 1}</h3>
+        <label class="switch">
+          <input type="checkbox" aria-label="Layer ${i + 1} on/off">
+          <span class="knob"></span>
+        </label>
+      </div>
+      <div class="row">
+        <label>Source</label>
+        <select aria-label="Layer ${i + 1} sound source">
+          <optgroup label="Tone">
+            ${TONE_WAVES.map(w => `<option value="${w}">${w}</option>`).join('')}
+          </optgroup>
+          <optgroup label="Noise">
+            ${NOISE_TYPES.map(w => `<option value="${w}">${w} noise</option>`).join('')}
+          </optgroup>
+        </select>
+      </div>
+      <div class="row">
+        <label>Freq</label>
+        <div class="freqbox">
+          <input class="num" type="number" min="${FMIN}" max="${FMAX}" step="any"
+                 aria-label="Layer ${i + 1} frequency in hertz">
+          <span class="unit">Hz</span>
+          <span class="note" aria-label="nearest musical note"></span>
+        </div>
+      </div>
+      <input class="fslider" type="range" min="0" max="${FSTEPS}" step="1"
+             aria-label="Layer ${i + 1} frequency slider">
+      <div class="subnote" hidden>below ≈20 Hz — under the audible range; most speakers can’t reproduce it</div>
+      <div class="row">
+        <label>Vol</label>
+        <input class="vslider" type="range" min="0" max="100" step="1" aria-label="Layer ${i + 1} volume">
+        <span class="val vval"></span>
+      </div>
+      <div class="row">
+        <label>Pan</label>
+        <input class="pslider" type="range" min="-100" max="100" step="1" aria-label="Layer ${i + 1} stereo pan">
+        <span class="val pval"></span>
+      </div>
+      <div class="row">
+        <label title="Throbs this layer's volume at the chosen rate, so a very low, otherwise-inaudible rhythm can be heard riding on an audible tone">Pulse</label>
+        <label class="switch">
+          <input type="checkbox" class="amtog" aria-label="Layer ${i + 1} volume pulse on/off">
+          <span class="knob"></span>
+        </label>
+        <input class="num amrate" type="number" min="0.1" max="100" step="any" aria-label="Layer ${i + 1} pulse rate in hertz">
+        <span class="unit">Hz</span>
+      </div>
+      <div class="amhint" hidden>volume throbs at this rate — makes a sub-audible rhythm audible on the carrier tone</div>`;
+    grid.appendChild(card);
+
+    const els = {
+      card,
+      on:      card.querySelector('.switch input'),
+      wave:    card.querySelector('select'),
+      num:     card.querySelector('.num'),
+      note:    card.querySelector('.note'),
+      fslider: card.querySelector('.fslider'),
+      subnote: card.querySelector('.subnote'),
+      vslider: card.querySelector('.vslider'),
+      vval:    card.querySelector('.vval'),
+      pslider: card.querySelector('.pslider'),
+      pval:    card.querySelector('.pval'),
+      amtog:   card.querySelector('.amtog'),
+      amrate:  card.querySelector('.amrate'),
+      amhint:  card.querySelector('.amhint'),
+    };
+    layerEls[i] = els;
+
+    els.on.addEventListener('change', () => {
+      st.on = els.on.checked;
+      card.classList.toggle('off', !st.on);
+      pushVol(i);
+    });
+    els.wave.addEventListener('change', () => { st.wave = els.wave.value; reflectSource(i); pushWave(i); });
+    els.fslider.addEventListener('input', () => {
+      st.freq = clampFreq(parseFloat(sliderToFreq(+els.fslider.value).toFixed(2)));
+      els.num.value = fmtFreq(st.freq);
+      els.note.textContent = noteName(st.freq);
+      els.subnote.hidden = st.freq >= 20;
+      pushFreq(i);
+    });
+    els.num.addEventListener('change', () => {     // commit on Enter/blur so typing "5…28" never jumps to 5 Hz
+      const f = parseFloat(els.num.value);
+      if (isFinite(f)) st.freq = clampFreq(f);
+      els.num.value = fmtFreq(st.freq);
+      els.fslider.value = freqToSlider(st.freq);
+      els.note.textContent = noteName(st.freq);
+      els.subnote.hidden = st.freq >= 20;
+      pushFreq(i, 0.05);
+    });
+    els.vslider.addEventListener('input', () => {
+      st.vol = +els.vslider.value;
+      els.vval.textContent = st.vol + '%';
+      pushVol(i);
+    });
+    els.pslider.addEventListener('input', () => {
+      st.pan = +els.pslider.value;
+      els.pval.textContent = fmtPan(st.pan);
+      pushPan(i);
+    });
+    els.amtog.addEventListener('change', () => {
+      st.amOn = els.amtog.checked;
+      els.amhint.hidden = !st.amOn;
+      pushAM(i);
+    });
+    els.amrate.addEventListener('change', () => {
+      const v = parseFloat(els.amrate.value);
+      if (isFinite(v)) st.am = clampAM(v);
+      els.amrate.value = fmtFreq(st.am);
+      if (st.amOn) pushAM(i);
+    });
+
+    refreshLayerUI(i);
+  }
+}
+
+function refreshLayerUI(i){
+  const st = state.layers[i], els = layerEls[i];
+  els.on.checked = st.on;
+  els.card.classList.toggle('off', !st.on);
+  els.wave.value = st.wave;
+  els.num.value = fmtFreq(st.freq);
+  els.note.textContent = noteName(st.freq);
+  els.fslider.value = freqToSlider(st.freq);
+  els.subnote.hidden = st.freq >= 20;
+  els.vslider.value = st.vol;
+  els.vval.textContent = st.vol + '%';
+  els.pslider.value = st.pan;
+  els.pval.textContent = fmtPan(st.pan);
+  els.amtog.checked = st.amOn;
+  els.amrate.value = fmtFreq(st.am);
+  els.amhint.hidden = !st.amOn;
+  reflectSource(i);
+}
+
+// noise layers have no pitch: grey out the frequency controls and show "no pitch"
+function reflectSource(i){
+  const st = state.layers[i], els = layerEls[i];
+  const noise = isNoise(st.wave);
+  els.num.disabled = noise;
+  els.fslider.disabled = noise;
+  els.note.textContent = noise ? 'no pitch' : noteName(st.freq);
+  els.subnote.hidden = noise || st.freq >= 20;
+}
+
+function buildPresets(){
+  const bar = document.getElementById('presetBar');
+  PRESETS.forEach((p, idx) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'preset';
+    b.textContent = p.name;
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => applyPreset(idx));
+    bar.appendChild(b);
+    presetBtns.push(b);
+  });
+}
+
+function applyPreset(idx){
+  const p = PRESETS[idx];
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const src = p.layers[i];
+    if (src){
+      Object.assign(state.layers[i], src);
+      state.layers[i].amOn = src.amOn || false;   // presets that don't ask for Pulse leave it off
+    } else {
+      state.layers[i].on = false;                 // unused layers go silent but keep their settings
+      state.layers[i].amOn = false;
+    }
+    refreshLayerUI(i);
+  }
+  presetBtns.forEach((b, j) => {
+    b.classList.toggle('active', j === idx);
+    b.setAttribute('aria-pressed', String(j === idx));
+  });
+  ui.presetName.textContent = p.name;
+  ui.presetDesc.textContent = p.desc;
+  ui.hpNote.hidden = !p.headphones;              // persistent while the preset is selected
+  saveState();                                   // preset sets values programmatically → persist explicitly
+  setPlaying(true);                              // preset click is a user gesture → audio may start
+}
+
+/* ================= sound library UI ================= */
+const LIB_FILTERS = ['all','sleep','focus','relax','meditate','energy','creativity','pain','tinnitus','noise','solfeggio','binaural','popular','underrated'];
+const libChips = [];
+let libFilter = 'all';
+
+function buildLibrary(){
+  const bar = document.getElementById('libFilters');
+  LIB_FILTERS.forEach(f => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'libchip' + (f === libFilter ? ' active' : '');
+    b.textContent = f === 'all' ? 'All' : f;
+    b.dataset.f = f;
+    b.addEventListener('click', () => { libFilter = f; renderLib(); });
+    bar.appendChild(b);
+    libChips.push(b);
+  });
+  renderLib();
+}
+
+const POP_LABEL = { viral:'🔥 viral', popular:'popular', underrated:'💎 underrated', niche:'niche' };
+
+function renderLib(){
+  libChips.forEach(b => b.classList.toggle('active', b.dataset.f === libFilter));
+  const list = document.getElementById('libList');
+  list.innerHTML = '';
+  const items = LIBRARY.filter(e => libFilter === 'all' || e.cats.indexOf(libFilter) !== -1);
+  if (!items.length){ list.innerHTML = '<p class="libempty">Nothing in this category yet.</p>'; return; }
+  items.forEach(e => {
+    const ev = EVIDENCE[e.evidence] || EVIDENCE.none;
+    const card = document.createElement('article');
+    card.className = 'libcard' + (e.external ? ' ext' : '');
+    card.innerHTML =
+      '<div class="libtop"><h4></h4><span class="evbadge ' + ev.cls + '"></span></div>' +
+      '<div class="libmeta"></div><p class="libclaim"></p><p class="libnote"></p>' +
+      '<div class="libactions"></div>';
+    card.querySelector('h4').textContent = e.name;
+    card.querySelector('.evbadge').textContent = ev.label;
+    card.querySelector('.libmeta').textContent = e.type + ' · ' + (POP_LABEL[e.pop] || e.pop) + (e.hp ? ' · 🎧' : '');
+    card.querySelector('.libclaim').textContent = e.claim;
+    card.querySelector('.libnote').textContent = e.note;
+    const actions = card.querySelector('.libactions');
+    if (e.external){
+      const a = document.createElement('a');
+      a.className = 'libload'; a.textContent = 'Open ↗'; a.style.textDecoration = 'none';
+      a.href = e.src; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      actions.appendChild(a);
+    } else {
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'libload'; btn.textContent = '▶ Load';
+      btn.addEventListener('click', () => applyLibrary(e));
+      actions.appendChild(btn);
+    }
+    const src = document.createElement('a');
+    src.className = 'libsrc'; src.textContent = 'source'; src.href = e.src;
+    src.target = '_blank'; src.rel = 'noopener noreferrer';
+    actions.appendChild(src);
+    list.appendChild(card);
+  });
+}
+
+function applyLibrary(e){
+  const cfg = e.config;
+  for (let i = 0; i < NUM_LAYERS; i++){
+    const src = cfg.layers[i];
+    if (src){ Object.assign(state.layers[i], src); state.layers[i].amOn = src.amOn || false; }
+    else { state.layers[i].on = false; state.layers[i].amOn = false; }
+    refreshLayerUI(i);
+  }
+  presetBtns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
+  ui.presetName.textContent = e.name;
+  ui.presetDesc.textContent = e.claim + '  ·  ' + e.note;
+  ui.hpNote.hidden = !e.hp;
+  saveState();
+  setPlaying(true);
+  const sw = document.getElementById('scopewrap');
+  if (sw && sw.scrollIntoView) sw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/* ================= master controls ================= */
+ui.playBtn.addEventListener('click', () => setPlaying(!state.playing));
+ui.master.addEventListener('input', () => {
+  state.master = +ui.master.value;
+  ui.masterVal.textContent = state.master + '%';
+  if (actx && state.playing) glide(masterGain.gain, masterVal(), 0.04);
+});
+ui.sleepSel.addEventListener('change', () => armSleep(parseInt(ui.sleepSel.value, 10)));
+
+/* belt & braces for autoplay policy: any interaction revives a suspended context */
+['pointerdown', 'keydown'].forEach(ev =>
+  document.addEventListener(ev, () => {
+    if (actx && state.playing && actx.state === 'suspended') actx.resume();
+  }, true)
+);
+
+/* ================= visualizer ================= */
+const scope = document.getElementById('scope');
+function drawScope(){
+  requestAnimationFrame(drawScope);
+  const dpr = window.devicePixelRatio || 1;
+  const w = scope.clientWidth, h = scope.clientHeight;
+  if (!w || !h) return;
+  if (scope.width !== Math.round(w * dpr) || scope.height !== Math.round(h * dpr)){
+    scope.width = Math.round(w * dpr);
+    scope.height = Math.round(h * dpr);
+  }
+  const g = scope.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  g.strokeStyle = 'rgba(255,255,255,0.07)';
+  g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+
+  g.lineWidth = 2;
+  g.strokeStyle = '#4cc9f0';
+  g.shadowColor = 'rgba(76,201,240,0.45)';
+  g.shadowBlur = 8;
+  g.beginPath();
+  if (analyser && state.playing){
+    analyser.getByteTimeDomainData(scopeBuf);
+    const n = scopeBuf.length;
+    for (let x = 0; x <= w; x++){
+      const v = scopeBuf[Math.min(n - 1, Math.floor(x / w * n))];
+      const y = h / 2 - ((v - 128) / 128) * (h / 2 - 6);
+      if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+  } else {
+    g.moveTo(0, h / 2); g.lineTo(w, h / 2);
+  }
+  g.stroke();
+  g.shadowBlur = 0;
+}
+
+/* ================= persistence (localStorage) ================= */
+const LS_KEY = 'tonelab.v1';
+let saveTimer = null;
+function saveState(){
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ master: state.master, layers: state.layers }));
+  } catch (e) { /* storage unavailable (private mode / file restrictions) — silently skip */ }
+}
+function scheduleSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(saveState, 500); }
+function loadState(){
+  let data;
+  try { data = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { return; }
+  if (!data || typeof data !== 'object') return;
+  if (isFinite(data.master)) state.master = Math.min(100, Math.max(0, data.master));
+  if (Array.isArray(data.layers)) data.layers.forEach((L, i) => {
+    const st = state.layers[i];
+    if (!st || !L || typeof L !== 'object') return;          // validate every field — never trust stored JSON
+    if (typeof L.on === 'boolean') st.on = L.on;
+    if (ALL_WAVES.includes(L.wave)) st.wave = L.wave;
+    if (isFinite(L.freq)) st.freq = clampFreq(L.freq);
+    if (isFinite(L.vol)) st.vol = Math.min(100, Math.max(0, L.vol));
+    if (isFinite(L.pan)) st.pan = Math.min(100, Math.max(-100, L.pan));
+    if (typeof L.amOn === 'boolean') st.amOn = L.amOn;
+    if (isFinite(L.am)) st.am = clampAM(L.am);
+  });
+}
+
+/* ================= init ================= */
+loadState();                                     // restore last session before building the UI
+ui.master.value = state.master;
+ui.masterVal.textContent = state.master + '%';
+buildLayers();
+buildPresets();
+buildLibrary();
+drawScope();
+
+// persist on change (debounced) and whenever the tab is hidden or closed
+document.getElementById('layers').addEventListener('input', scheduleSave);
+document.getElementById('layers').addEventListener('change', scheduleSave);
+ui.master.addEventListener('input', scheduleSave);
+window.addEventListener('pagehide', saveState);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveState(); });
+</script>
+</body>
+</html>
