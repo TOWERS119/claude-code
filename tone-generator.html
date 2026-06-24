@@ -70,6 +70,8 @@
   input[type=number]{ -moz-appearance:textfield }
   .unit{ color:var(--dim); font-size:13px }
   .note{ color:var(--accent); font-size:12px; opacity:.85; min-width:46px; font-variant-numeric:tabular-nums }
+  input:disabled{ opacity:.35; cursor:not-allowed }
+  input[type=range]:disabled::-webkit-slider-thumb{ background:var(--off); box-shadow:none }
   .subnote{ color:var(--warn); font-size:12px; margin:2px 0 4px }
   .amhint{ color:var(--dim); font-size:12px; margin:2px 0 4px }
   input.amrate{ width:74px }
@@ -152,7 +154,11 @@
 /* ================= constants & state ================= */
 const NUM_LAYERS = 6;
 const FMIN = 0.1, FMAX = 20000, FSTEPS = 2000;
-const WAVES = ['sine', 'square', 'sawtooth', 'triangle'];
+const TONE_WAVES = ['sine', 'square', 'sawtooth', 'triangle'];
+const NOISE_TYPES = ['white', 'pink', 'brown', 'green'];
+const WAVES = TONE_WAVES;                         // tonal oscillator types
+const ALL_WAVES = TONE_WAVES.concat(NOISE_TYPES); // valid layer "wave" values (incl. noise)
+const isNoise = w => NOISE_TYPES.indexOf(w) !== -1;
 const DEFAULT_FREQS = [220, 330, 440, 110, 55, 880];
 
 const state = {
@@ -266,29 +272,80 @@ function ensureAudio(){
     const osc = actx.createOscillator();
     const gain = actx.createGain();
     const pan = actx.createStereoPanner ? actx.createStereoPanner() : null;
+    // Each layer can be a tone OR a noise colour. oscGain / noiseGain (0 or 1)
+    // pick which source feeds the layer gain, crossfaded to avoid clicks.
+    const oscGain = actx.createGain();
+    const noiseGain = actx.createGain();
     // LFO → amGain → gain.gain implements amplitude modulation ("Pulse"):
     // the LFO output is *added* onto the gain param, so the layer's volume
     // throbs at am Hz — this is how an inaudible rate (e.g. 7.83 Hz) is made
     // hearable as a pulse riding on an audible carrier tone.
     const lfo = actx.createOscillator();
     const amGain = actx.createGain();
-    osc.type = st.wave;
+    const noise = isNoise(st.wave);
+    osc.type = noise ? 'sine' : st.wave;         // osc.type only accepts tonal types
     osc.frequency.value = st.freq;
+    oscGain.gain.value = noise ? 0 : 1;
+    noiseGain.gain.value = noise ? 1 : 0;
     lfo.type = 'sine';
     lfo.frequency.value = st.am > 0 ? st.am : 1;
     const parts = amParts(st);
     gain.gain.value = parts.base;
     amGain.gain.value = parts.depth;
-    osc.connect(gain);
+    osc.connect(oscGain); oscGain.connect(gain);
+    noiseGain.connect(gain);
     lfo.connect(amGain);
     amGain.connect(gain.gain);
     if (pan){ pan.pan.value = st.pan / 100; gain.connect(pan); pan.connect(masterGain); }
     else { gain.connect(masterGain); }
     osc.start();                                 // oscillators run forever; gain gates them (click-free)
     lfo.start();
-    nodes[i] = { osc, gain, pan, lfo, amGain };
+    nodes[i] = { osc, gain, pan, lfo, amGain, oscGain, noiseGain, noiseSrc: null, noiseColor: null };
+    if (noise) ensureNoiseSrc(i, st.wave);
   }
   return actx;
+}
+
+/* ---- noise colours: generate once, cache, loop a long buffer ---- */
+const noiseBuffers = {};
+function noiseBuffer(color){
+  if (noiseBuffers[color]) return noiseBuffers[color];
+  const len = Math.floor(actx.sampleRate * 8);   // 8 s loop — long enough that the repeat is hard to hear
+  const buf = actx.createBuffer(1, len, actx.sampleRate);
+  const d = buf.getChannelData(0);
+  if (color === 'pink'){
+    // Paul Kellet's economical pink-noise filter (~ -3 dB/oct)
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for (let i=0;i<len;i++){
+      const w = Math.random()*2-1;
+      b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759; b2=0.96900*b2+w*0.1538520;
+      b3=0.86650*b3+w*0.3104856; b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+      d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+    }
+  } else if (color === 'brown'){
+    let last=0;                                   // leaky integrator of white (~ -6 dB/oct)
+    for (let i=0;i<len;i++){ const w=Math.random()*2-1; last=(last+0.02*w)/1.02; d[i]=last*3.5; }
+  } else if (color === 'green'){
+    // mid-band emphasis (~500 Hz) via a state-variable band-pass on white
+    let lp=0, bp=0; const f=2*Math.sin(Math.PI*500/actx.sampleRate), q=0.35;
+    for (let i=0;i<len;i++){ const w=Math.random()*2-1; lp+=f*bp; const hp=w-lp-q*bp; bp+=f*hp; d[i]=bp*0.6; }
+  } else {
+    for (let i=0;i<len;i++) d[i]=Math.random()*2-1;   // white
+  }
+  noiseBuffers[color]=buf;
+  return buf;
+}
+function ensureNoiseSrc(i, color){
+  const n = nodes[i];
+  if (n.noiseColor === color && n.noiseSrc) return;
+  if (n.noiseSrc){ try { n.noiseSrc.stop(); } catch(e){} try { n.noiseSrc.disconnect(); } catch(e){} }
+  const src = actx.createBufferSource();
+  src.buffer = noiseBuffer(color);
+  src.loop = true;
+  src.connect(n.noiseGain);
+  src.start();
+  n.noiseSrc = src;
+  n.noiseColor = color;
 }
 
 const AM_DEPTH = 0.85;                                           // pulse depth: 1 = full silence-to-peak, lower = gentler throb
@@ -324,11 +381,25 @@ function pushAM(i){
 }
 function pushWave(i){
   const n = nodes[i], st = state.layers[i];
-  if (!n || n.osc.type === st.wave) return;
-  // oscillator.type changes are instant and can click — dip this layer for ~60 ms around the switch
-  glide(n.gain.gain, 0, 0.012);
-  glide(n.amGain.gain, 0, 0.012);
-  setTimeout(() => { n.osc.type = st.wave; pushVol(i); }, 60);
+  if (!n) return;
+  if (isNoise(st.wave)){
+    glide(n.oscGain.gain, 0, 0.02);              // fade out the tonal path
+    if (n.noiseColor !== st.wave){
+      glide(n.noiseGain.gain, 0, 0.012);         // dip, swap to the new colour, fade back — no seam click
+      setTimeout(() => { ensureNoiseSrc(i, st.wave); glide(n.noiseGain.gain, 1, 0.02); }, 60);
+    } else {
+      ensureNoiseSrc(i, st.wave);
+      glide(n.noiseGain.gain, 1, 0.03);
+    }
+  } else {
+    glide(n.noiseGain.gain, 0, 0.02);            // fade out the noise path
+    if (n.osc.type !== st.wave){
+      glide(n.oscGain.gain, 0, 0.012);           // osc.type changes are instant and can click — dip ~60 ms around it
+      setTimeout(() => { n.osc.type = st.wave; glide(n.oscGain.gain, 1, 0.02); }, 60);
+    } else {
+      glide(n.oscGain.gain, 1, 0.03);
+    }
+  }
 }
 function syncAllAudio(){
   if (!actx) return;
@@ -433,9 +504,14 @@ function buildLayers(){
         </label>
       </div>
       <div class="row">
-        <label>Wave</label>
-        <select aria-label="Layer ${i + 1} waveform">
-          ${WAVES.map(w => `<option value="${w}">${w}</option>`).join('')}
+        <label>Source</label>
+        <select aria-label="Layer ${i + 1} sound source">
+          <optgroup label="Tone">
+            ${TONE_WAVES.map(w => `<option value="${w}">${w}</option>`).join('')}
+          </optgroup>
+          <optgroup label="Noise">
+            ${NOISE_TYPES.map(w => `<option value="${w}">${w} noise</option>`).join('')}
+          </optgroup>
         </select>
       </div>
       <div class="row">
@@ -495,7 +571,7 @@ function buildLayers(){
       card.classList.toggle('off', !st.on);
       pushVol(i);
     });
-    els.wave.addEventListener('change', () => { st.wave = els.wave.value; pushWave(i); });
+    els.wave.addEventListener('change', () => { st.wave = els.wave.value; reflectSource(i); pushWave(i); });
     els.fslider.addEventListener('input', () => {
       st.freq = clampFreq(parseFloat(sliderToFreq(+els.fslider.value).toFixed(2)));
       els.num.value = fmtFreq(st.freq);
@@ -554,6 +630,17 @@ function refreshLayerUI(i){
   els.amtog.checked = st.amOn;
   els.amrate.value = fmtFreq(st.am);
   els.amhint.hidden = !st.amOn;
+  reflectSource(i);
+}
+
+// noise layers have no pitch: grey out the frequency controls and show "no pitch"
+function reflectSource(i){
+  const st = state.layers[i], els = layerEls[i];
+  const noise = isNoise(st.wave);
+  els.num.disabled = noise;
+  els.fslider.disabled = noise;
+  els.note.textContent = noise ? 'no pitch' : noteName(st.freq);
+  els.subnote.hidden = noise || st.freq >= 20;
 }
 
 function buildPresets(){
@@ -667,7 +754,7 @@ function loadState(){
     const st = state.layers[i];
     if (!st || !L || typeof L !== 'object') return;          // validate every field — never trust stored JSON
     if (typeof L.on === 'boolean') st.on = L.on;
-    if (WAVES.includes(L.wave)) st.wave = L.wave;
+    if (ALL_WAVES.includes(L.wave)) st.wave = L.wave;
     if (isFinite(L.freq)) st.freq = clampFreq(L.freq);
     if (isFinite(L.vol)) st.vol = Math.min(100, Math.max(0, L.vol));
     if (isFinite(L.pan)) st.pan = Math.min(100, Math.max(-100, L.pan));
