@@ -1,0 +1,90 @@
+//@version=6
+// AR ATR Trend Multi-Confirmation Strategy
+// Trend (SuperTrend) + momentum (MACD histogram direction) + strength (ADX)
+// + volume confirmation, with an ATR fixed stop-loss and an ATR trailing stop.
+// Paste into TradingView -> Pine Editor -> "Add to chart". If any line errors,
+// send me the message and I'll fix it (I can't compile Pine here).
+
+strategy("AR ATR Trend Multi-Confirmation", overlay=true,
+     default_qty_type   = strategy.percent_of_equity, default_qty_value = 10,
+     commission_type    = strategy.commission.percent, commission_value = 0.04,
+     slippage           = 2,
+     process_orders_on_close = true)
+
+// ───────────── Inputs ─────────────
+// Trend filter — SuperTrend
+stFactor = input.float(3.0, "SuperTrend factor",     minval = 0.5, step = 0.1, group = "Trend")
+stAtrLen = input.int  (10,  "SuperTrend ATR length", minval = 1,             group = "Trend")
+
+// Momentum — MACD HISTOGRAM direction (not the signal-line crossover)
+macdFast = input.int(12, "MACD fast",   minval = 1, group = "Momentum")
+macdSlow = input.int(26, "MACD slow",   minval = 1, group = "Momentum")
+macdSig  = input.int(9,  "MACD signal", minval = 1, group = "Momentum")
+
+// Trend strength — ADX
+adxLen  = input.int  (14, "ADX DI length",  minval = 1, group = "Strength")
+adxSmth = input.int  (14, "ADX smoothing",  minval = 1, group = "Strength")
+adxMin  = input.float(20, "ADX minimum",    minval = 0, step = 0.5, group = "Strength")
+
+// Volume confirmation
+volLen = input.int(20, "Volume MA length", minval = 1, group = "Volume")
+
+// Risk — ATR stop-loss + ATR trailing stop
+atrLen       = input.int  (14,  "Risk ATR length",        minval = 1,             group = "Risk")
+slAtrMult    = input.float(2.0, "Stop-loss ATR mult",     minval = 0.1, step = 0.1, group = "Risk")
+trailAtrMult = input.float(3.0, "Trailing-stop ATR mult", minval = 0.1, step = 0.1, group = "Risk")
+
+// ───────────── Indicators ─────────────
+[stLine, stDir] = ta.supertrend(stFactor, stAtrLen)
+trendUp   = stDir < 0   // SuperTrend direction: negative = uptrend (price above)
+trendDown = stDir > 0
+
+[_macd, _signal, hist] = ta.macd(close, macdFast, macdSlow, macdSig)
+momUp   = hist > 0      // histogram above zero = bullish momentum
+momDown = hist < 0      // histogram below zero = bearish momentum
+
+[_diPlus, _diMinus, adx] = ta.dmi(adxLen, adxSmth)
+strong = adx > adxMin
+
+volMa = ta.sma(volume, volLen)
+volOk = volume > volMa  // entry only when volume exceeds its moving average
+
+atr = ta.atr(atrLen)
+
+// ───────────── Entries (all four confirmations must align) ─────────────
+longCond  = trendUp   and momUp   and strong and volOk
+shortCond = trendDown and momDown and strong and volOk
+
+if longCond and strategy.position_size <= 0
+    strategy.entry("Long", strategy.long)
+
+if shortCond and strategy.position_size >= 0
+    strategy.entry("Short", strategy.short)
+
+// ───────────── Exits: ATR fixed stop-loss + ATR trailing stop ─────────────
+slPoints    = slAtrMult    * atr
+trailPoints = trailAtrMult * atr
+avg         = strategy.position_avg_price
+
+if strategy.position_size > 0
+    strategy.exit("Long exit", from_entry = "Long",
+         stop         = avg - slPoints,                 // fixed ATR stop-loss
+         trail_price  = avg + trailPoints,              // activate trailing here
+         trail_offset = trailPoints / syminfo.mintick)  // trail distance, in ticks
+
+if strategy.position_size < 0
+    strategy.exit("Short exit", from_entry = "Short",
+         stop         = avg + slPoints,
+         trail_price  = avg - trailPoints,
+         trail_offset = trailPoints / syminfo.mintick)
+
+// Optional: close out if SuperTrend flips against an open position
+if trendDown and strategy.position_size > 0
+    strategy.close("Long", comment = "trend flip")
+if trendUp and strategy.position_size < 0
+    strategy.close("Short", comment = "trend flip")
+
+// ───────────── Plots ─────────────
+plot(stLine, "SuperTrend", color = trendUp ? color.green : color.red, linewidth = 2)
+plotchar(longCond,  "Long signal",  "▲", location.belowbar, color.green, size = size.tiny)
+plotchar(shortCond, "Short signal", "▼", location.abovebar, color.red,   size = size.tiny)

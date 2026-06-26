@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""One-command quickstart for the LLM features.
+
+Pick a provider with --provider (default glm). Free, no-credit-card options:
+gemini, groq, openrouter, and fully-local ollama. Set the matching key, e.g.:
+
+    export GROQ_API_KEY=...       # or GEMINI_API_KEY / OPENROUTER_API_KEY / GLM_API_KEY
+                                  # (ollama needs no key)
+
+Then start with a single command (data is pulled from Coinbase's public endpoint,
+no key needed; use --csv to run fully offline against a saved file):
+
+    # the model proposes strategies; the walk-forward rig judges them honestly
+    python3 quickstart.py research --provider groq --csv findings/data/BTC-USD_1h.csv
+
+    # paper simulator with the model as a subtractive trade advisor
+    python3 quickstart.py advisor  --provider gemini --csv findings/data/BTC-USD_1h.csv
+
+No installs (pure standard library) and no broker keys: this path is
+paper/simulator only. The advisor can only veto or shrink trades behind the
+RiskManager, and research is judged by the same out-of-sample + noise-floor rig
+as everything else — no model can create edge or place a real order here.
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import logging
+import os
+import sys
+import tempfile
+
+from ict_smc import data
+from ict_smc.types import Candle, Params
+from ict_smc import research, providers
+from ict_smc.advisor import TradeAdvisor
+from ict_smc.config import BotConfig
+from ict_smc.risk import RiskManager
+from ict_smc.memory import Memory
+from ict_smc.engine import run_once, build_broker
+from ict_smc import performance
+
+
+def _load_candles(args):
+    """Load candles from --csv (offline) or fetch from Coinbase (keyless)."""
+    if args.csv:
+        return data.from_csv(args.csv), args.csv
+    import fetch_coinbase
+    print(f"fetching {args.bars} x {args.granularity}s candles for {args.symbol} "
+          f"from Coinbase (no key needed) ...")
+    rows = fetch_coinbase.fetch(args.symbol, args.granularity, args.bars)
+    candles = [Candle(ts, o, h, l, c, v) for ts, o, h, l, c, v in rows]
+    return candles, f"{args.symbol} {args.granularity}s x{len(candles)}"
+
+
+def _make_client(args):
+    """Build the LLM client (overridable in tests via _CLIENT_FACTORY)."""
+    return _CLIENT_FACTORY(provider=args.provider, model=args.model, base_url=args.base_url)
+
+
+def _default_client_factory(*, provider, model, base_url):
+    # model/base_url are None unless overridden -> the provider preset is used
+    return providers.make_client(provider, model=model, base_url=base_url)
+
+
+# Indirection so tests can inject a fake client without network/keys.
+_CLIENT_FACTORY = _default_client_factory
+
+
+def _require_key(provider: str) -> bool:
+    msg = providers.require_key(provider)
+    if msg:
+        print(msg, file=sys.stderr)
+        return False
+    return True
+
+
+def cmd_research(args) -> int:
+    if not _require_key(args.provider):
+        return 2
+    candles, source = _load_candles(args)
+    base = Params(require_fvg=False, min_rr=2.0)
+    client = _make_client(args)
+    print(f"running strategy research via '{args.provider}' on {source} "
+          f"(~{args.rounds * args.batch} proposals = billable API calls) ...")
+    report = research.run_research(client, candles, base, n_rounds=args.rounds,
+                                   batch_size=args.batch, n_folds=args.n_folds,
+                                   logger=logging.getLogger("quickstart"))
+    print(f"\nnoise floor: {report.noise_floor:+.3f}R (random-data OOS expectancy)")
+    print(f"{'rank':>4}  {'OOS E':>8}  {'PF':>5}  {'trades':>6}  {'margin':>7}  flag")
+    for i, r in enumerate(report.ranked, 1):
+        if r.error:
+            print(f"{i:>4}  {'--':>8}  {'--':>5}  {'--':>6}  {'--':>7}  SKIPPED ({r.error})")
+            continue
+        pf = "inf" if r.oos_profit_factor == float("inf") else f"{r.oos_profit_factor:.2f}"
+        flag = "PASS" if r.passes_noise_floor else "SUB-NOISE-FLOOR"
+        print(f"{i:>4}  {r.oos_expectancy_r:>+8.3f}  {pf:>5}  {r.oos_num_trades:>6}  "
+              f"{r.margin:>+7.3f}  {flag}")
+        print(f"        params: {r.params_overrides}")
+    print()
+    if report.best:
+        print(f"best beating the noise floor: {report.best.params_overrides}")
+    else:
+        print("No proposal cleared the noise floor — i.e. no edge found. That's the "
+              "expected, honest result.")
+    return 0
+
+
+def cmd_advisor(args) -> int:
+    if not _require_key(args.provider):
+        return 2
+    candles, source = _load_candles(args)
+    state_dir = tempfile.mkdtemp(prefix="quickstart_")
+    cfg = BotConfig(symbol=args.symbol, state_dir=state_dir)
+    cfg.params = Params(require_fvg=False, min_rr=2.0)
+    mem = Memory(state_dir)
+    risk = RiskManager(cfg.limits)
+    broker = build_broker(cfg, mem)
+    client = _make_client(args)
+    advisor = TradeAdvisor(client, enabled=True, fail_mode=args.fail_mode)
+
+    print(f"running the paper simulator on {source} with the '{args.provider}' advisor "
+          f"(one API call per setup; this is billable) ...")
+    report = run_once(cfg, broker, risk, mem, candles, advisor=advisor)
+
+    # count what GLM actually did (from the recorded rejections)
+    actions = collections.Counter()
+    for _, _, reason in report.rejections:
+        if "advisor veto" in reason:
+            actions["veto"] += 1
+        elif "downsized to zero" in reason:
+            actions["downsize->0"] += 1
+    trades = mem.read_trades()
+    perf = performance.summarize(trades, cfg.starting_equity, candles)
+
+    print("\n== paper run with GLM advisor ==")
+    print(report.summary())
+    print(f"GLM actions: vetoes={actions['veto']} downsized-to-zero={actions['downsize->0']} "
+          f"(allowed/downsized setups became the {len(report.submitted)} submitted orders)")
+    print(f"performance: {perf.summary()}")
+    print("\nReminder: paper only. The advisor can only veto/shrink behind the "
+          "RiskManager; it cannot place a real order or manufacture an edge.")
+    return 0
+
+
+def main(argv) -> int:
+    ap = argparse.ArgumentParser(description="One-command LLM quickstart (pick --provider)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    def common(p):
+        p.add_argument("--csv", default=None, help="run offline from a CSV instead of fetching")
+        p.add_argument("--symbol", default="BTC-USD")
+        p.add_argument("--granularity", type=int, default=3600, help="seconds (3600=1h)")
+        p.add_argument("--bars", type=int, default=2000)
+        p.add_argument("--provider", default=os.environ.get("BOT_LLM_PROVIDER", "glm"),
+                       choices=sorted(providers.PROVIDERS),
+                       help="LLM provider; free options: gemini, groq, openrouter, ollama "
+                            "(or set BOT_LLM_PROVIDER)")
+        p.add_argument("--model", default=os.environ.get("BOT_GLM_MODEL"),
+                       help="override the provider's default model")
+        p.add_argument("--base-url", default=os.environ.get("BOT_GLM_BASE_URL"),
+                       help="override the provider's default endpoint")
+
+    pr = sub.add_parser("research", help="GLM proposes strategies; walk-forward judges them")
+    common(pr)
+    pr.add_argument("--rounds", type=int, default=3)
+    pr.add_argument("--batch", type=int, default=4)
+    pr.add_argument("--n-folds", type=int, default=4)
+    pr.set_defaults(func=cmd_research)
+
+    pa = sub.add_parser("advisor", help="paper sim with GLM as a subtractive trade advisor")
+    common(pa)
+    pa.add_argument("--fail-mode", choices=["closed", "open"], default="closed")
+    pa.set_defaults(func=cmd_advisor)
+
+    args = ap.parse_args(argv)
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
